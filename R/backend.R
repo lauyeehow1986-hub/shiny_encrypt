@@ -47,7 +47,12 @@ load_native_backend <- function(quiet = TRUE) {
   ok <- tryCatch({
     if (!is.loaded("wrap__native_backend_version")) dyn.load(path)
     ver <- .Call("wrap__native_backend_version")
-    caps <- c("argon2id")   # capabilities compiled into this build
+    # Probe which primitives this particular build actually exports, so an older
+    # dll (e.g. argon2-only) never advertises PQC it cannot perform.
+    has <- function(nm) isTRUE(tryCatch({ getNativeSymbolInfo(nm); TRUE },
+                                        error = function(e) FALSE))
+    caps <- "argon2id"
+    if (has("wrap__native_hybrid_keygen")) caps <- c(caps, "hpke-hybrid")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)

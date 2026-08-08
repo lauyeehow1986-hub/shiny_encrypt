@@ -32,10 +32,12 @@ register_all_schemes <- function() {
   # Native (real once the Rust/C++ crate is built)
   .register_scheme_placeholder("hpke-hybrid", "Native",
     "Hybrid HPKE: X25519 + ML-KEM-768 key-wrap", "the native PQC crate",
-    "Post-quantum hybrid KEM. Build the native package to enable.", cap("hpke-hybrid"))
+    "Post-quantum hybrid KEM — offered as the 'Recipient public key (PQC hybrid)' KEY SOURCE on the Encrypt tab when the native backend is built.",
+    cap("hpke-hybrid"))
   .register_scheme_placeholder("ml-dsa", "Native",
     "ML-DSA (Dilithium) signature over the envelope", "the native PQC crate",
-    "FIPS 204 signatures. Build the native package to enable.", cap("ml-dsa"))
+    "FIPS 204 signatures. Native primitive is built; envelope-signing UI is pending.",
+    cap("ml-dsa"))
   .register_scheme_placeholder("cp-abe", "Native",
     "Attribute-Based Encryption (CP-ABE)", "the native rabe crate",
     "Policy-based access control. Build the native package to enable.", cap("cp-abe"))

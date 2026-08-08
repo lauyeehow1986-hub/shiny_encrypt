@@ -6,7 +6,7 @@
 #                 recoverable later (the random-key source).
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
-KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile")
+KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -46,6 +46,15 @@ resolve_key <- function(spec) {
       list(key = coerce_key(spec$bytes, 32L), salt = NULL,
            source_meta = list(type = "keyfile"),
            key_export = NULL)
+    },
+    "hybrid_pqc" = {
+      pub <- as_raw(spec$public_bundle %||%
+                      stop("Generate or upload a recipient public key first."))
+      enc <- native_hybrid_encaps(pub)   # X25519 + ML-KEM-768 encapsulation
+      list(key = enc$key, salt = NULL,
+           source_meta = list(type = "hybrid_pqc", kem = "x25519-mlkem768",
+                              encapsulation = raw_to_base64(enc$encapsulation)),
+           key_export = NULL)   # recipient decrypts with their downloaded secret bundle
     }
   )
 }
@@ -64,6 +73,11 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       if (isTRUE(source_meta$harden))
         kdf_derive(digest, salt = salt, algo = "scrypt", size = 32L)$key
       else coerce_key(digest, 32L)
+    },
+    "hybrid_pqc" = {
+      encap <- base64_to_raw(source_meta$encapsulation %||%
+                               stop("Artifact is missing its KEM encapsulation."))
+      native_hybrid_decaps(as_raw(secret), encap)   # secret = recipient secret bundle
     },
     stop(sprintf("Unknown key source: %s", type))
   )

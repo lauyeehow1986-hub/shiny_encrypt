@@ -76,7 +76,7 @@ test_that("native Argon2id (if built) matches a KAT and round-trips", {
 })
 
 test_that("native hybrid KEM (if built) agrees, and rejects the wrong recipient", {
-  skip_if_not(isTRUE(getOption("shinyEncrypt.native.enabled", FALSE)), "native backend not built")
+  skip_if_not(crypto_backend_available("hpke-hybrid"), "native PQC backend not built")
   kp <- native_hybrid_keygen()
   expect_length(kp$secret, 2432); expect_length(kp$public, 1216)
   e <- native_hybrid_encaps(kp$public)
@@ -87,7 +87,7 @@ test_that("native hybrid KEM (if built) agrees, and rejects the wrong recipient"
 })
 
 test_that("native ML-DSA-65 (if built) signs, verifies, and rejects tampering", {
-  skip_if_not(isTRUE(getOption("shinyEncrypt.native.enabled", FALSE)), "native backend not built")
+  skip_if_not(crypto_backend_available("hpke-hybrid"), "native PQC backend not built")
   kp <- native_mldsa_keygen()
   expect_length(kp$secret, 4032); expect_length(kp$public, 1952)
   msg <- charToRaw("authenticate this envelope")
@@ -98,8 +98,24 @@ test_that("native ML-DSA-65 (if built) signs, verifies, and rejects tampering", 
   expect_false(native_mldsa_verify(kp$public, bad, sig))
 })
 
-test_that("catalogue lists all tiers and only Core is available now", {
+test_that("hybrid PQC key source (if built) encrypts to a public key, decrypts with the secret", {
+  skip_if_not(crypto_backend_available("hpke-hybrid"), "native PQC backend not built")
+  kp <- native_hybrid_keygen()
+  kr <- resolve_key(list(type = "hybrid_pqc", public_bundle = kp$public))
+  expect_identical(kr$source_meta$type, "hybrid_pqc")
+  expect_true(nchar(kr$source_meta$encapsulation) > 0)   # encapsulation is stored
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "p.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+  expect_identical(se_decrypt(env_rt, kp$secret), payload)   # recipient secret decrypts
+  other <- native_hybrid_keygen()
+  expect_error(se_decrypt(env_rt, other$secret))             # wrong recipient fails
+})
+
+test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
-  expect_setequal(s$id[s$available], c("aead-secretbox", "aead-aesgcm"))
+  expect_true(all(c("aead-secretbox", "aead-aesgcm") %in% s$id[s$available]))
+  # The hybrid KEM row reports available only when the native backend is built.
+  expect_equal("hpke-hybrid" %in% s$id[s$available],
+               crypto_backend_available("hpke-hybrid"))
 })

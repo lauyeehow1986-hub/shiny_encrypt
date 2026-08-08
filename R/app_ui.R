@@ -48,6 +48,15 @@ ui_encrypt <- function() {
       shiny::conditionalPanel(
         "input.keysrc == 'keyfile'",
         shiny::fileInput("keyfile_up", "Key file (hex text or raw bytes)")),
+      shiny::conditionalPanel(
+        "input.keysrc == 'hybrid_pqc'",
+        shiny::helpText(class = "small text-muted",
+          "Post-quantum hybrid (X25519 + ML-KEM-768). Encrypts to a recipient ",
+          "public key; only their secret key can decrypt."),
+        shiny::actionButton("gen_pqc", "Generate a new PQC keypair",
+                            class = "btn-outline-primary btn-sm mb-2 w-100"),
+        shiny::uiOutput("pqc_key_status"),
+        shiny::fileInput("pqc_pub_up", "…or upload a recipient public key (.pub)")),
       shiny::hr(),
       shiny::selectInput("scheme", "Encryption scheme", choices = NULL),
       shiny::textInput("nonce", "Nonce/IV (optional — blank = secure random)", ""),

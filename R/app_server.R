@@ -12,7 +12,7 @@
 app_server <- function(input, output, session) {
 
   rv <- shiny::reactiveValues(env = NULL, keyres = NULL, keyfiles = list(),
-                              dec_env = NULL, dec_pt = NULL)
+                              dec_env = NULL, dec_pt = NULL, pqc_keys = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -27,6 +27,16 @@ app_server <- function(input, output, session) {
     kdfs <- intersect(c("argon2id", "scrypt", "bcrypt_pbkdf"), available_kdfs())
     shiny::updateSelectInput(session, "kdf",
                              choices = stats::setNames(kdfs, labs[kdfs]))
+
+    # Offer the PQC hybrid key source only when the native backend is loaded.
+    ksrc <- c("Random key (download it!)" = "random",
+              "Passphrase (KDF)" = "passphrase",
+              "Free text → hash" = "freetext_hash",
+              "Key file" = "keyfile")
+    if (isTRUE(crypto_backend_available("hpke-hybrid")))
+      ksrc <- c(ksrc, "Recipient public key (PQC hybrid)" = "hybrid_pqc")
+    shiny::updateSelectInput(session, "keysrc", choices = ksrc,
+                             selected = shiny::isolate(input$keysrc))
   })
 
   # ---------- Import ----------
@@ -84,8 +94,43 @@ app_server <- function(input, output, session) {
       "freetext_hash" = list(type = "freetext_hash", text = input$freetext,
                              hash_algo = input$hashalgo, harden = input$harden),
       "keyfile"       = list(type = "keyfile",
-                             bytes = read_secret_bytes(shiny::req(input$keyfile_up)$datapath)))
+                             bytes = read_secret_bytes(shiny::req(input$keyfile_up)$datapath)),
+      "hybrid_pqc"    = list(type = "hybrid_pqc", public_bundle = {
+        if (!is.null(input$pqc_pub_up)) read_secret_bytes(input$pqc_pub_up$datapath)
+        else if (!is.null(rv$pqc_keys)) rv$pqc_keys$public
+        else stop("Generate a PQC keypair or upload a recipient public key first.")
+      }))
   }
+
+  # ---- PQC keypair generation (hybrid X25519 + ML-KEM-768) ----
+  shiny::observeEvent(input$gen_pqc, {
+    tryCatch({
+      rv$pqc_keys <- native_hybrid_keygen()
+      shiny::showNotification(
+        "PQC keypair generated. Download BOTH files — the secret is the only way to decrypt.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("Keygen failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$pqc_key_status <- shiny::renderUI({
+    if (is.null(rv$pqc_keys)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2",
+      shiny::HTML("Keypair ready. The <b>.pub</b> encrypts; the <b>.secret</b> decrypts and is the only copy — store it safely."),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_pqc_pub", ".pub", class = "btn-outline-primary btn-sm me-2"),
+        shiny::downloadButton("dl_pqc_sec", ".secret", class = "btn-outline-danger btn-sm")))
+  })
+
+  .pqc_hex_file <- function(bytes, kind)
+    paste0("# shinyEncrypt PQC hybrid ", kind, " (X25519+ML-KEM-768), hex:\n",
+           sodium::bin2hex(as_raw(bytes)), "\n")
+  output$dl_pqc_pub <- shiny::downloadHandler(
+    filename = function() "recipient_pqc.pub",
+    content  = function(file) writeLines(.pqc_hex_file(rv$pqc_keys$public, "PUBLIC key"), file))
+  output$dl_pqc_sec <- shiny::downloadHandler(
+    filename = function() "recipient_pqc.secret",
+    content  = function(file) writeLines(.pqc_hex_file(rv$pqc_keys$secret, "SECRET key"), file))
 
   # ---------- Encrypt ----------
   shiny::observeEvent(input$do_encrypt, {
@@ -170,6 +215,7 @@ app_server <- function(input, output, session) {
       "keyfile"       = "This artifact used a KEY FILE — upload it below.",
       "passphrase"    = "This artifact used a PASSPHRASE — type it above.",
       "freetext_hash" = "This artifact used FREE TEXT — type the exact text above.",
+      "hybrid_pqc"    = "This artifact used a PQC HYBRID key — upload the recipient's .secret key below.",
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
@@ -179,9 +225,11 @@ app_server <- function(input, output, session) {
     tryCatch({
       env <- dec_env()
       t <- env$key_source$type
-      secret <- if (t %in% c("random", "keyfile")) {
+      secret <- if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
-          stop("This artifact needs its KEY FILE — upload it in the key-file box below.")
+          stop(if (t == "hybrid_pqc")
+                 "This artifact needs the recipient's PQC SECRET key — upload it in the key-file box below."
+               else "This artifact needs its KEY FILE — upload it in the key-file box below.")
         read_secret_bytes(input$dec_keyfile$datapath)
       } else {
         if (!nzchar(input$dec_secret %||% ""))
@@ -254,8 +302,8 @@ app_server <- function(input, output, session) {
   # not wake them until a tab change — which leaves the Encrypt tab blank after an
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
-               "dec_source_hint", "dec_summary", "dec_preview", "dec_downloads",
-               "scheme_table", "help_md")) {
+               "pqc_key_status", "dec_source_hint", "dec_summary", "dec_preview",
+               "dec_downloads", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }
 }
