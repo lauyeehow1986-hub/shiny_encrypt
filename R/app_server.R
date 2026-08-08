@@ -222,8 +222,13 @@ app_server <- function(input, output, session) {
     shiny::HTML(help_html())
   })
 
-  # Catalogue + help are cheap and reference material — render eagerly so they
-  # are ready before their tab is first shown.
-  shiny::outputOptions(output, "scheme_table", suspendWhenHidden = FALSE)
-  shiny::outputOptions(output, "help_md", suspendWhenHidden = FALSE)
+  # Render outputs eagerly. bslib nav panels render their content hidden during
+  # the first pass, so Shiny suspends the initially-active tab's outputs and does
+  # not wake them until a tab change — which leaves the Encrypt tab blank after an
+  # upload. Disabling suspend-when-hidden for the display outputs fixes that.
+  for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
+               "dec_source_hint", "dec_summary", "dec_preview", "dec_downloads",
+               "scheme_table", "help_md")) {
+    shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
+  }
 }

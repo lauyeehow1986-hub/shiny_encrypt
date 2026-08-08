@@ -19,7 +19,7 @@ ui_encrypt <- function() {
   bslib::layout_sidebar(
     sidebar = bslib::sidebar(
       width = 360, title = "1–5. Encrypt pipeline",
-      shiny::fileInput("infile", "Import CSV / XLSX / RDS / binary",
+      shiny::fileInput("infile", "Import CSV / XLSX / RDS / binary (up to 1 GB)",
                        accept = c(".csv", ".tsv", ".xlsx", ".xls", ".rds", ".bin")),
       shiny::selectInput("kind", "Interpret as",
                          c("Auto-detect" = "auto", "CSV" = "csv", "Excel (xlsx)" = "xlsx",

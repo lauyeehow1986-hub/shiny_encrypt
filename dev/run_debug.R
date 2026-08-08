@@ -1,0 +1,6 @@
+.root <- normalizePath(".")
+suppressMessages({library(shiny);library(bslib);library(sodium);library(openssl);library(digest);library(jsonlite);library(readr);library(readxl)})
+invisible(lapply(list.files("R", pattern="[.]R$", full.names=TRUE), source))
+register_all_schemes()
+options(shiny.fullstacktrace=TRUE, shiny.maxRequestSize=1024*1024^2)
+shiny::runApp(shiny::shinyApp(app_ui(), app_server), host="127.0.0.1", port=7801, launch.browser=FALSE)
