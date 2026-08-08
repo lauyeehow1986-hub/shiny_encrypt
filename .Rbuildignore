@@ -1,0 +1,10 @@
+^dev$
+^docs$
+^\.claude$
+^\.github$
+^LICENSE\.md$
+^.*\.Rproj$
+^\.Rproj\.user$
+^src$
+^src/rust$
+^src/rust/target$

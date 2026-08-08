@@ -1,0 +1,18 @@
+# Native crypto crate (Phase 4+). Not built yet — the app runs on pure-R Core AEAD
+# until this is compiled via rextendr + Rtools (see tools/setup_toolchain.R).
+[package]
+name = "shinyencrypt_native"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+extendr-api = "0.7"
+# Phase 4 (PQC):        ml-kem, ml-dsa (pqcrypto), hpke, x25519-dalek
+# Phase 5 (access):     rabe (CP-ABE), fpe, recrypt (PRE), sharks (Shamir)
+# Phase 6 (heavy):      tfhe (CUDA feature), bulletproofs
+# argon2 (fixes this machine's broken libsodium Argon2)
+argon2 = "0.5"

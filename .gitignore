@@ -1,0 +1,38 @@
+# --- Sensitive: never commit real data, keys, or encrypted outputs ---
+data/
+*.rds
+*.RDS
+*.key
+*.secret
+*.pem
+*.pub
+*_share_*.txt
+share_*_of_*.txt
+keyfile*
+*.enc
+*.envelope
+exported_*.txt
+exported_*.R
+secrets/
+private/
+
+# --- R ---
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# --- Rust / native build artifacts ---
+src/rust/target/
+src/*.o
+src/*.so
+src/*.dll
+src/rust/Cargo.lock
+
+# --- Editor / OS / session ---
+.claude/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

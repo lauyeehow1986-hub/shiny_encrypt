@@ -1,0 +1,30 @@
+Package: shinyEncrypt
+Title: Multi-Step File Conversion and Cryptographic Protection (Shiny)
+Version: 0.1.0
+Authors@R:
+    person("YH", role = c("aut", "cre"), email = "lauyeehow1986@gmail.com")
+Description: A Shiny application and cryptographic engine that converts CSV/XLSX
+    (or existing RDS/binary) data into a serialized, Base64-encoded payload and
+    protects it with standard and state-of-the-art cryptography. Users adjust
+    parameters live, export a reproducible R script and/or a ciphertext text
+    envelope, download the relevant key material, and decrypt artifacts back to
+    the original binary. A companion native package binds Rust/C/C++ crates for
+    post-quantum, homomorphic and advanced primitives (optional).
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.2)
+Imports:
+    shiny,
+    bslib,
+    sodium,
+    openssl,
+    digest,
+    jsonlite,
+    readr,
+    readxl,
+    openxlsx
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+RoxygenNote: 7.3.2
