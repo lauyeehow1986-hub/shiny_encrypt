@@ -23,7 +23,17 @@ target    <- "x86_64-pc-windows-gnu"
 cargo_td  <- "C:/se_ct"
 
 rhome <- normalizePath(R.home(), winslash = "/")
-cargo_bin <- normalizePath("~/.cargo/bin", winslash = "/", mustWork = FALSE)
+# Resolve cargo's bin robustly: on Windows R expands "~" to Documents, not the
+# user profile, so ~/.cargo/bin misses. Prefer CARGO_HOME / USERPROFILE.
+.cargo_candidates <- c(
+  file.path(Sys.getenv("CARGO_HOME", ""), "bin"),
+  file.path(Sys.getenv("USERPROFILE", ""), ".cargo", "bin"),
+  path.expand("~/.cargo/bin"),
+  file.path(Sys.getenv("HOME", ""), ".cargo", "bin")
+)
+.cargo_candidates <- .cargo_candidates[nzchar(.cargo_candidates) & dir.exists(.cargo_candidates)]
+cargo_bin <- if (length(.cargo_candidates))
+  normalizePath(.cargo_candidates[1], winslash = "/") else ""
 rtools <- c("C:/rtools45/usr/bin", "C:/rtools45/x86_64-w64-mingw32.static.posix/bin")
 rbin  <- file.path(rhome, "bin", "x64")
 
