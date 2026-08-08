@@ -196,8 +196,9 @@ app_server <- function(input, output, session) {
 
   output$dec_preview <- shiny::renderTable({
     shiny::req(rv$dec_pt, rv$dec_env$orig_kind %in% c("csv", "xlsx"))
-    utils::head(as.data.frame(restore_object(rv$dec_pt, rv$dec_env$orig_kind)), 10)
-  })
+    df <- as.data.frame(restore_object(rv$dec_pt, rv$dec_env$orig_kind))
+    .cap_preview(df)$preview   # cap cols too, or wide tables freeze the browser
+  }, striped = TRUE, bordered = TRUE, spacing = "xs")
 
   output$dec_downloads <- shiny::renderUI({
     shiny::req(rv$dec_pt)
