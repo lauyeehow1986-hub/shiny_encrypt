@@ -25,20 +25,34 @@ app_server <- function(input, output, session) {
   # ---------- Import ----------
   imported <- shiny::reactive({
     shiny::req(input$infile)
-    import_to_raw(input$infile$datapath, kind = input$kind,
-                  orig_name = input$infile$name)
+    inf <- input$infile
+    shiny::withProgress(message = "Reading & serializing…", value = 0.4, {
+      tryCatch(
+        import_to_raw(inf$datapath, kind = input$kind, orig_name = inf$name),
+        error = function(e) {
+          shiny::showNotification(paste("Import failed:", conditionMessage(e)),
+                                  type = "error", duration = 12)
+          NULL
+        })
+    })
   })
 
   output$import_info <- shiny::renderText({
+    shiny::req(input$infile)
     im <- imported()
-    sprintf("Imported '%s' as kind='%s'  (%s bytes serialized)%s",
-            im$orig_name, im$kind, length(im$raw),
-            if (!is.null(im$preview)) sprintf("\nPreview: %d rows x %d cols",
-                                              nrow(im$preview), ncol(im$preview)) else "")
+    if (is.null(im)) return("Import failed — see the notification. Try a different 'Interpret as' setting.")
+    dimtxt <- if (!is.null(im$dims))
+      sprintf("\nData: %d rows x %d cols%s", im$dims[1], im$dims[2],
+              if (isTRUE(im$truncated)) sprintf("  (preview shows first %d x %d)",
+                                                nrow(im$preview), ncol(im$preview)) else "") else ""
+    sz <- input$infile$size %||% NA
+    sprintf("Imported '%s' as kind='%s'\nUpload size: %s bytes  ·  serialized payload: %s bytes%s",
+            im$orig_name, im$kind, format(sz, big.mark = ","),
+            format(length(im$raw), big.mark = ","), dimtxt)
   })
   output$preview <- shiny::renderTable({
-    im <- imported(); shiny::req(!is.null(im$preview)); utils::head(im$preview, 10)
-  })
+    im <- imported(); shiny::req(!is.null(im) && !is.null(im$preview)); im$preview
+  }, striped = TRUE, bordered = TRUE, spacing = "xs")
 
   output$strength <- shiny::renderUI({
     b <- .estimate_bits(input$freetext)
