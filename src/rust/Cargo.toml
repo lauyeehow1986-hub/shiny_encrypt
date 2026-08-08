@@ -20,4 +20,11 @@ codegen-units = 1
 extendr-api = "0.7"
 # Argon2id (fixes this machine's broken libsodium Argon2). Pure Rust, no C deps.
 argon2 = "0.5"
-# Phase 4 (PQC), added next: ml-kem, ml-dsa (RustCrypto), x25519-dalek, hkdf, sha2
+# Post-quantum (Phase 4): FIPS 203 ML-KEM + FIPS 204 ML-DSA (pure Rust).
+fips203 = "0.4"
+fips204 = "0.4"
+# Classical half of the hybrid KEM + the KDF that combines the two secrets.
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+hkdf = "0.12"
+sha2 = "0.10"

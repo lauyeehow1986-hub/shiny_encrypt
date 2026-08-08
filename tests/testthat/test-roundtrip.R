@@ -75,6 +75,29 @@ test_that("native Argon2id (if built) matches a KAT and round-trips", {
   expect_error(se_decrypt(env_rt, "wrong"))
 })
 
+test_that("native hybrid KEM (if built) agrees, and rejects the wrong recipient", {
+  skip_if_not(isTRUE(getOption("shinyEncrypt.native.enabled", FALSE)), "native backend not built")
+  kp <- native_hybrid_keygen()
+  expect_length(kp$secret, 2432); expect_length(kp$public, 1216)
+  e <- native_hybrid_encaps(kp$public)
+  expect_length(e$encapsulation, 1120); expect_length(e$key, 32)
+  expect_identical(native_hybrid_decaps(kp$secret, e$encapsulation), e$key)
+  other <- native_hybrid_keygen()
+  expect_false(identical(native_hybrid_decaps(other$secret, e$encapsulation), e$key))
+})
+
+test_that("native ML-DSA-65 (if built) signs, verifies, and rejects tampering", {
+  skip_if_not(isTRUE(getOption("shinyEncrypt.native.enabled", FALSE)), "native backend not built")
+  kp <- native_mldsa_keygen()
+  expect_length(kp$secret, 4032); expect_length(kp$public, 1952)
+  msg <- charToRaw("authenticate this envelope")
+  sig <- native_mldsa_sign(kp$secret, msg)
+  expect_length(sig, 3309)
+  expect_true(native_mldsa_verify(kp$public, msg, sig))
+  bad <- msg; bad[1] <- as.raw(bitwXor(as.integer(bad[1]), 1L))
+  expect_false(native_mldsa_verify(kp$public, bad, sig))
+})
+
 test_that("catalogue lists all tiers and only Core is available now", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))

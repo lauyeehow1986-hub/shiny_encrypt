@@ -21,6 +21,7 @@ crypto_backend_available <- function(name) {
 # Locate the built native dll (build artifact from tools/build_native.R).
 native_lib_path <- function() {
   cand <- c(
+    getOption("shinyEncrypt.native.libpath", ""),   # explicit override (tests/dev)
     system.file("libs", "x64", "shinyencrypt_native.dll", package = "shinyEncrypt"),
     file.path(getwd(), "inst", "libs", "x64", "shinyencrypt_native.dll"),
     file.path(getOption("shinyEncrypt.root", getwd()), "inst", "libs", "x64",
@@ -69,6 +70,59 @@ native_argon2id <- function(secret, salt, mem_kib = 19456L, iters = 2L,
     stop("native argon2id not available (build it via tools/build_native.R).")
   .Call("wrap__native_argon2id", as_raw(secret), as_raw(salt),
         as.integer(mem_kib), as.integer(iters), as.integer(lanes), as.integer(size))
+}
+
+.require_native <- function() {
+  if (!isTRUE(getOption("shinyEncrypt.native.enabled", FALSE)))
+    stop("native backend not loaded (build it via tools/build_native.R).")
+}
+
+# ---- Hybrid post-quantum KEM (X25519 + ML-KEM-768) -------------------------
+# Byte layouts must match src/rust/src/lib.rs.
+.HYB <- list(sk = 2432L, pub = 1216L, encap = 1120L, key = 32L)
+
+# Generate a recipient hybrid keypair. Returns list(secret, public) raw bundles.
+native_hybrid_keygen <- function() {
+  .require_native()
+  b <- .Call("wrap__native_hybrid_keygen")
+  list(secret = b[seq_len(.HYB$sk)],
+       public = b[(.HYB$sk + 1L):length(b)])
+}
+
+# Encapsulate to a recipient public bundle. Returns list(encapsulation, key).
+native_hybrid_encaps <- function(public_bundle) {
+  .require_native()
+  out <- .Call("wrap__native_hybrid_encaps", as_raw(public_bundle))
+  list(encapsulation = out[seq_len(.HYB$encap)],
+       key = out[(.HYB$encap + 1L):length(out)])
+}
+
+# Decapsulate with a recipient secret bundle + encapsulation. Returns the key (raw).
+native_hybrid_decaps <- function(secret_bundle, encapsulation) {
+  .require_native()
+  .Call("wrap__native_hybrid_decaps", as_raw(secret_bundle), as_raw(encapsulation))
+}
+
+# ---- ML-DSA-65 signatures (FIPS 204) ---------------------------------------
+.MLDSA <- list(sk = 4032L, pk = 1952L, sig = 3309L)
+
+# Generate a signing keypair. Returns list(secret, public) raw bundles.
+native_mldsa_keygen <- function() {
+  .require_native()
+  b <- .Call("wrap__native_mldsa_keygen")
+  list(secret = b[seq_len(.MLDSA$sk)],
+       public = b[(.MLDSA$sk + 1L):length(b)])
+}
+
+native_mldsa_sign <- function(secret_key, message) {
+  .require_native()
+  .Call("wrap__native_mldsa_sign", as_raw(secret_key), as_raw(message))
+}
+
+native_mldsa_verify <- function(public_key, message, signature) {
+  .require_native()
+  identical(.Call("wrap__native_mldsa_verify", as_raw(public_key),
+                  as_raw(message), as_raw(signature)), 1L)
 }
 
 native_backends_status <- function() {

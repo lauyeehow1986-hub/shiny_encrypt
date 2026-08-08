@@ -73,11 +73,19 @@ if (st != 0 || !file.exists(dll_tmp)) stop("R CMD SHLIB failed.")
 # ---- 3. stage the dll under inst/libs/x64 -----------------------------------
 message("\n[3/3] staging dll -> ", out_dir)
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-file.copy(dll_tmp, file.path(out_dir, paste0(crate, ".dll")), overwrite = TRUE)
-
+dest <- file.path(out_dir, paste0(crate, ".dll"))
+copied <- suppressWarnings(file.copy(dll_tmp, dest, overwrite = TRUE))
+if (!isTRUE(copied) || !file.exists(dest) ||
+    file.info(dest)$size != file.info(dll_tmp)$size) {
+  unlink(c(file.path(src_dir, "entrypoint.o"),
+           file.path(src_dir, paste0("lib", crate, ".a"))))
+  stop("Could not stage the dll (likely locked). Freshly built dll is at:\n  ",
+       normalizePath(dll_tmp), "\nStop any running app that loaded ", crate,
+       ".dll (it holds the lock), then re-run this script.")
+}
 # tidy intermediate objects (keep the staticlib out of git via .gitignore)
 unlink(c(dll_tmp, file.path(src_dir, "entrypoint.o"),
          file.path(src_dir, paste0("lib", crate, ".a"))))
 
-message("\nOK -> ", file.path(out_dir, paste0(crate, ".dll")))
+message("\nOK -> ", dest)
 message("Restart the app; R/backend.R will dyn.load it and enable native caps.")
