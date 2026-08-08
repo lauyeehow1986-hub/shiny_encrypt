@@ -2,8 +2,10 @@
 
 # Build downloadable key files for a resolved key. Returns a named list of
 # list(name, text). Only the random-key source yields a secret key file (it is
-# the sole copy); passphrase/free-text sources are reconstructed from the secret
-# the user already holds.
+# the sole copy). Passphrase/free-text sources are reconstructed from the secret
+# the user already holds, and their KDF salt is already stored inside the
+# envelope, so nothing needs downloading — returning no files keeps the
+# "Download key material" button (and the temptation to re-upload the salt) away.
 key_material_files <- function(keyres, scheme_id = "aead") {
   files <- list()
   if (!is.null(keyres$key_export)) {
@@ -11,15 +13,8 @@ key_material_files <- function(keyres, scheme_id = "aead") {
       name = sprintf("%s.secret.key.txt", scheme_id),
       text = paste0(
         "# shinyEncrypt SECRET KEY - keep private, anyone with this can decrypt.\n",
-        "# hex(32 bytes):\n",
+        "# This is the ONLY copy. Upload this file to decrypt. hex(32 bytes):\n",
         sodium::bin2hex(keyres$key_export), "\n")
-    )
-  }
-  if (!is.null(keyres$salt)) {
-    files[["salt"]] <- list(
-      name = sprintf("%s.salt.txt", scheme_id),
-      text = paste0("# KDF salt (not secret, but needed to rederive the key)\n",
-                    sodium::bin2hex(keyres$salt), "\n")
     )
   }
   files

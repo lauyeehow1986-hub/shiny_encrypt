@@ -173,9 +173,14 @@ app_server <- function(input, output, session) {
       env <- dec_env()
       t <- env$key_source$type
       secret <- if (t %in% c("random", "keyfile")) {
-        read_secret_bytes(shiny::req(input$dec_keyfile)$datapath)
+        if (is.null(input$dec_keyfile))
+          stop("This artifact needs its KEY FILE — upload it in the key-file box below.")
+        read_secret_bytes(input$dec_keyfile$datapath)
       } else {
-        shiny::req(nzchar(input$dec_secret)); input$dec_secret
+        if (!nzchar(input$dec_secret %||% ""))
+          stop(sprintf("This artifact needs its %s — type it in the box above (not a key file; the salt is already inside the artifact).",
+                       if (t == "passphrase") "PASSPHRASE" else "FREE TEXT"))
+        input$dec_secret
       }
       pt <- se_decrypt(env, secret)
       if (isTRUE(env$compressed)) pt <- gunzip_raw(pt)
