@@ -50,7 +50,9 @@ ui_encrypt <- function() {
         shiny::fileInput("keyfile_up", "Key file (hex text or raw bytes)")),
       shiny::hr(),
       shiny::selectInput("scheme", "Encryption scheme", choices = NULL),
-      shiny::textInput("nonce", "Nonce/IV (hex, optional — blank = random)", ""),
+      shiny::textInput("nonce", "Nonce/IV (optional — blank = secure random)", ""),
+      shiny::helpText(class = "small text-muted",
+                      "Leave blank for a random nonce (recommended). Any text is accepted; exact-length hex is used verbatim."),
       shiny::actionButton("do_encrypt", "Encrypt", class = "btn-primary w-100"),
       .disclaimer()
     ),
