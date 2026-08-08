@@ -46,10 +46,14 @@ envelope_serialize <- function(env) {
 # in a .txt or is embedded in a .R file (surrounding text is ignored).
 envelope_parse <- function(text) {
   lines <- strsplit(text, "\r?\n")[[1]]
-  b <- which(trimws(lines) == ENV_BEGIN)
-  e <- which(trimws(lines) == ENV_END)
-  if (length(b) != 1L || length(e) != 1L || e <= b)
+  # Match lines that *contain* the markers, not equal them: inside an exported
+  # .R the BEGIN marker shares its line with `envelope_text <- "` and END with a
+  # trailing quote. The body lines in between are pure Base64 either way.
+  b <- which(grepl(ENV_BEGIN, lines, fixed = TRUE))
+  e <- which(grepl(ENV_END, lines, fixed = TRUE))
+  if (length(b) < 1L || length(e) < 1L || e[1] <= b[1])
     stop("No valid SHINY-ENCRYPT envelope found in the uploaded artifact.")
+  b <- b[1]; e <- e[1]
   body <- paste(trimws(lines[(b + 1L):(e - 1L)]), collapse = "")
   json <- rawToChar(openssl::base64_decode(body))
   env  <- jsonlite::fromJSON(json, simplifyVector = TRUE)

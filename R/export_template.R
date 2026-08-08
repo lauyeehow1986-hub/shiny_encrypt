@@ -91,6 +91,6 @@ writeBin(as.vector(pt), env$orig_name %||% "recovered.bin")
 `%||%` <- function(a,b) if(is.null(a)||length(a)==0) b else a
 secret <- NULL   # <== EDIT ME (passphrase / free-text / key hex)
 
-envelope_text <- "', gsub("\n", "\\\\n", env_block), '"
+envelope_text <- "', env_block, '"
 ', decrypt_body)
 }
