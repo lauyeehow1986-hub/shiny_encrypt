@@ -19,11 +19,17 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | Adjustable params (nonce/IV, KDF, gzip) + integrity digest | ✅ working |
 | Export `.R` (portable, self-decrypting) + `.txt` envelope + key `.zip` | ✅ working |
 | Decrypt tab → original binary / re-materialize CSV | ✅ working |
-| PQC (ML-KEM/ML-DSA), CP-ABE, FPE, PRE, time-lock, Shamir | ⛏ native crate (Phase 4–5) |
+| **Argon2id KDF** (native, OWASP costs) | ✅ working when native backend built |
+| **Hybrid PQC key source** — X25519 + ML-KEM-768 KEM | ✅ working when native backend built |
+| **ML-DSA-65 envelope signing** (+ signer pinning on decrypt) | ✅ working when native backend built |
+| **Shamir t-of-n** key custody | ✅ working when native backend built |
+| CP-ABE, FPE, PRE, time-lock | ⛏ native crate (Phase 5) |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
-The full catalogue (with per-session availability) is shown on the app's **Schemes** tab.
+The full catalogue (with per-session availability) is shown on the app's **Schemes** tab. The
+four native features above light up automatically once `src/rust` is built and staged — the app
+probes the loaded library at startup and only offers what it can actually run.
 
 ## Prerequisites
 
@@ -45,13 +51,24 @@ To install as a package once native bindings are added: `R CMD INSTALL .` then `
 
 1. **Import** (Encrypt tab) — upload a CSV/XLSX (converted to an RDS-equivalent) or an RDS/binary; preview appears.
 2. **Encode** — automatic serialize + Base64. Optional gzip (leave **off** for sensitive/structured data — compression can leak).
-3. **Choose a key source** — Random (download the key — only copy!), Passphrase (scrypt), Free text → hash (keep *Harden* on; a bare hash is not a KDF), or Key file.
-4. **Pick a scheme & parameters** — Core AEAD now; nonce/IV blank = random, or set (hex) for reproducible output.
-5. **Encrypt** — review the envelope summary (scheme, sizes, integrity digest).
-6. **Download** — ciphertext `.txt`, reproducible `.R`, and key material `.zip` (for random keys).
-7. **Decrypt (reverse tab)** — upload a `.txt`/`.R`, supply the matching secret/key file, decrypt, verify the digest, download the original (or re-materialize CSV/XLSX).
+3. **Choose a key source** — Random (download the key — only copy!), Passphrase (scrypt, or **Argon2id** with the native backend), Free text → hash (keep *Harden* on; a bare hash is not a KDF), Key file, **Recipient public key (PQC hybrid)**, or **Random key split into Shamir shares (t-of-n)**.
+4. **Pick a scheme & parameters** — Core AEAD now; nonce/IV blank = random, or set (hex) for reproducible output. Optionally tick **Sign this envelope (ML-DSA-65)** to attach a post-quantum signature.
+5. **Encrypt** — review the envelope summary (scheme, sizes, integrity digest, and — if signed — the signer fingerprint).
+6. **Download** — ciphertext `.txt`, reproducible `.R`, and key material `.zip` (random key, PQC secret bundle, or the `share_k_of_n.txt` files).
+7. **Decrypt (reverse tab)** — upload a `.txt`/`.R`, supply the matching secret / key file / PQC secret / **any t Shamir shares**, decrypt, verify the digest, download the original (or re-materialize CSV/XLSX). Any signature is verified automatically; you may **pin** an expected signer key to confirm *who* signed it.
 
-The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` + `openssl`, and the embedded envelope is parsed as **data** — nothing in the artifact is executed.
+The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` + `openssl`, and the embedded envelope is parsed as **data** — nothing in the artifact is executed. Artifacts that use a native key source (Argon2id, PQC hybrid, Shamir) decrypt through the installed package rather than the standalone `.R`, since they need the Rust backend.
+
+## Native crypto features (Phase 4)
+
+Once the native backend is built and staged (`tools/build_native.R` → `inst/libs/x64/shinyencrypt_native.dll`), four additional capabilities appear:
+
+- **Argon2id KDF** — memory-hard passphrase hardening at OWASP costs (m=19456 KiB, t=2, p=1), stored in the envelope so the key re-derives on decrypt. Selected under the Passphrase key source when available. (This machine's libsodium Argon2 is broken; the native backend is the only Argon2id path here — scrypt remains the pure-R default.)
+- **Hybrid PQC key source** — an **X25519 + ML-KEM-768** KEM. Generate a keypair in-app, hand out the `.pub`, and encrypt to it; the encapsulation rides in the envelope and only the matching `.secret` bundle decapsulates the data key. Classical **and** post-quantum security — an attacker must break *both* X25519 and ML-KEM.
+- **ML-DSA-65 envelope signing** — FIPS 204 post-quantum signatures over the meaning-bearing envelope fields (ciphertext, params, key source, digest — everything but the signature block). The public key is embedded, so the Decrypt tab verifies with no extra upload and shows a signer **fingerprint**. A valid signature proves integrity + "signed by whoever holds that key"; to prove *who*, paste their fingerprint/public key into the **expected signer** field to pin it (green = authenticated, amber = valid-but-unpinned, red = mismatch).
+- **Shamir t-of-n custody** — split a fresh random data key across `n` custodians (GF(256) secret sharing). The key itself is never written; you get `n` `share_k_of_n.txt` files. Any **t** reconstruct it; any **t-1** reveal nothing (information-theoretic). Decrypt takes any t shares via a multi-file upload; too few is blocked, and even a bypass fails closed on the AEAD tag.
+
+Each is capability-gated: the app only shows a feature after probing that the loaded library actually exports it, so an older DLL never advertises something it can't do. Enabling a newly-built feature needs an app restart (the running app locks the staged DLL).
 
 ## Security notes
 
@@ -68,5 +85,6 @@ Rscript dev/test_server.R  # headless Shiny server: full encrypt/export/decrypt 
 
 ## Troubleshooting
 
-- **A scheme shows "unavailable"** → it needs the native crate; build via `tools/setup_toolchain.R`. Core AEAD always works.
-- **Argon2id missing** → this machine's libsodium Argon2 fails at runtime; use **scrypt** (default). Argon2id arrives with the native backend.
+- **A scheme / key source shows "unavailable"** → it needs the native crate; build via `tools/build_native.R` (toolchain one-time setup: `tools/setup_toolchain.R`). Core AEAD always works.
+- **Built the backend but the feature still isn't offered** → the running app locks the staged DLL, so a fresh build can't replace it. Stop the app, run `tools/build_native.R`, then restart.
+- **Argon2id / PQC / Shamir missing** → this machine's libsodium Argon2 fails at runtime, so Argon2id (and the PQC + Shamir features) come only from the native backend; without it, use **scrypt** (default) and the Core AEAD key sources.
