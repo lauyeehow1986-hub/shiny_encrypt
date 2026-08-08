@@ -15,7 +15,7 @@ available_kdfs <- function() {
 
 # Salt-length requirements differ per KDF; produce a suitable random salt.
 kdf_salt <- function(algo) {
-  n <- switch(algo, "scrypt" = 32L, "bcrypt_pbkdf" = 16L, 16L)
+  n <- switch(algo, "scrypt" = 32L, "bcrypt_pbkdf" = 16L, "argon2id" = 16L, 16L)
   sodium::random(n)
 }
 
@@ -47,7 +47,12 @@ kdf_derive <- function(secret, salt = NULL, algo = "scrypt", size = 32L,
     "argon2id" = {
       if (!isTRUE(crypto_backend_available("argon2id")))
         stop("Argon2id needs the native backend (not built). Use scrypt.")
-      native_argon2id(secret, salt, size, params)   # provided by backend when present
+      # Apply + record OWASP-tunable costs so decrypt can re-derive identically.
+      params$mem_kib <- as.integer(params$mem_kib %||% 19456L)  # 19 MiB
+      params$iters   <- as.integer(params$iters   %||% 2L)
+      params$lanes   <- as.integer(params$lanes   %||% 1L)
+      native_argon2id(secret, salt, mem_kib = params$mem_kib, iters = params$iters,
+                      lanes = params$lanes, size = size)
     }
   )
   list(key = as.raw(key), salt = as.raw(salt), algo = algo, params = params)

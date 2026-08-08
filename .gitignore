@@ -28,7 +28,9 @@ src/rust/target/
 src/*.o
 src/*.so
 src/*.dll
+src/*.a
 src/rust/Cargo.lock
+inst/libs/
 
 # --- Editor / OS / session ---
 .claude/

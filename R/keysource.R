@@ -22,7 +22,8 @@ resolve_key <- function(spec) {
                        algo = spec$kdf %||% "scrypt", size = 32L,
                        params = spec$kdf_params %||% list())
       list(key = kd$key, salt = kd$salt,
-           source_meta = list(type = "passphrase", kdf = kd$algo),
+           source_meta = list(type = "passphrase", kdf = kd$algo,
+                              kdf_params = kd$params),
            key_export = NULL)
     },
     "freetext_hash" = {
@@ -56,7 +57,8 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
     "random"    = coerce_key(secret, 32L),
     "keyfile"   = coerce_key(secret, 32L),
     "passphrase" = kdf_derive(secret, salt = salt,
-                              algo = source_meta$kdf %||% "scrypt", size = 32L)$key,
+                              algo = source_meta$kdf %||% "scrypt", size = 32L,
+                              params = as.list(source_meta$kdf_params %||% list()))$key,
     "freetext_hash" = {
       digest <- hash_bytes(secret, source_meta$hash_algo %||% "blake3")
       if (isTRUE(source_meta$harden))

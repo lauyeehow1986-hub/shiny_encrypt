@@ -21,6 +21,9 @@
 }
 
 register_all_schemes <- function() {
+  # Activate the native backend if it was built (enables argon2id etc.).
+  load_native_backend(quiet = TRUE)
+
   # Core (real, now)
   .register_core_aead()
 

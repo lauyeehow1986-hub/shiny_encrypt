@@ -17,7 +17,10 @@ build_txt_export <- function(env, scheme_label = env$scheme) {
 
 build_r_export <- function(env, scheme_label = env$scheme) {
   env_block <- envelope_serialize(env)
-  core <- env$scheme %in% c("aead-secretbox", "aead-aesgcm")
+  # The self-contained path needs only {sodium, openssl}. Argon2id-derived keys
+  # require the native backend, so those fall back to the package decrypt path.
+  needs_native <- identical(env$key_source$kdf %||% "", "argon2id")
+  core <- env$scheme %in% c("aead-secretbox", "aead-aesgcm") && !needs_native
 
   decrypt_body <- if (core) {
 '

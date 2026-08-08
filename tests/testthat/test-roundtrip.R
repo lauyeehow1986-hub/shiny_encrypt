@@ -58,6 +58,23 @@ test_that("hash KATs (known answers)", {
                    "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85")
 })
 
+test_that("native Argon2id (if built) matches a KAT and round-trips", {
+  skip_if_not(crypto_backend_available("argon2id"), "native backend not built")
+  # KAT: cross-checked against argon2-cffi (m=19456, t=2, p=1, len=32).
+  k <- native_argon2id(charToRaw("correct horse battery staple"),
+                       charToRaw("0123456789abcdef"), 19456L, 2L, 1L, 32L)
+  expect_identical(
+    paste(sprintf("%02x", as.integer(k)), collapse = ""),
+    "832e52b959b967b570ee4781f6c7bda7ced019ca266ac781fd2d94d4e853b0cd")
+  # end-to-end: passphrase via Argon2id, through JSON, decrypts; costs are stored.
+  kr <- resolve_key(list(type = "passphrase", passphrase = "pw-argon", kdf = "argon2id"))
+  expect_identical(kr$source_meta$kdf, "argon2id")
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "a.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+  expect_identical(se_decrypt(env_rt, "pw-argon"), payload)
+  expect_error(se_decrypt(env_rt, "wrong"))
+})
+
 test_that("catalogue lists all tiers and only Core is available now", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))

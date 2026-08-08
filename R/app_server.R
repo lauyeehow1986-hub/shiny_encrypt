@@ -20,6 +20,13 @@ app_server <- function(input, output, session) {
     avail <- sch[sch$available & sch$tier == "Core", ]
     choices <- stats::setNames(avail$id, sprintf("%s  [%s]", avail$label, avail$tier))
     shiny::updateSelectInput(session, "scheme", choices = choices)
+
+    # KDF choices: prefer native Argon2id when the backend is loaded.
+    labs <- c(argon2id = "Argon2id (native, memory-hard)",
+              scrypt = "scrypt (memory-hard)", bcrypt_pbkdf = "bcrypt_pbkdf")
+    kdfs <- intersect(c("argon2id", "scrypt", "bcrypt_pbkdf"), available_kdfs())
+    shiny::updateSelectInput(session, "kdf",
+                             choices = stats::setNames(kdfs, labs[kdfs]))
   })
 
   # ---------- Import ----------
