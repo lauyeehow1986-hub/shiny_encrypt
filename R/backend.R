@@ -53,6 +53,7 @@ load_native_backend <- function(quiet = TRUE) {
                                         error = function(e) FALSE))
     caps <- "argon2id"
     if (has("wrap__native_hybrid_keygen")) caps <- c(caps, "hpke-hybrid")
+    if (has("wrap__native_mldsa_keygen"))  caps <- c(caps, "ml-dsa")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)

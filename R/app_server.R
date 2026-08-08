@@ -12,7 +12,8 @@
 app_server <- function(input, output, session) {
 
   rv <- shiny::reactiveValues(env = NULL, keyres = NULL, keyfiles = list(),
-                              dec_env = NULL, dec_pt = NULL, pqc_keys = NULL)
+                              dec_env = NULL, dec_pt = NULL, pqc_keys = NULL,
+                              sign_keys = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -132,6 +133,54 @@ app_server <- function(input, output, session) {
     filename = function() "recipient_pqc.secret",
     content  = function(file) writeLines(.pqc_hex_file(rv$pqc_keys$secret, "SECRET key"), file))
 
+  # ---- Envelope signing (ML-DSA-65) ----
+  # Only offered when the native backend actually exports the signature symbols.
+  output$sign_ui <- shiny::renderUI({
+    if (!isTRUE(crypto_backend_available("ml-dsa"))) return(NULL)
+    shiny::tagList(
+      shiny::hr(),
+      shiny::checkboxInput("sign_env", "Sign this envelope (ML-DSA-65)", FALSE),
+      shiny::conditionalPanel(
+        "input.sign_env == true",
+        shiny::helpText(class = "small text-muted",
+          "Post-quantum signature over the ciphertext + metadata. Generate a ",
+          "signing keypair; the recipient checks the signature and its fingerprint."),
+        shiny::actionButton("gen_sign", "Generate signing keypair",
+                            class = "btn-outline-primary btn-sm mb-2 w-100"),
+        shiny::uiOutput("sign_key_status")))
+  })
+
+  shiny::observeEvent(input$gen_sign, {
+    tryCatch({
+      rv$sign_keys <- native_mldsa_keygen()
+      shiny::showNotification(
+        "Signing keypair generated. Keep the .signsecret private; share the .signpub fingerprint out-of-band.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("Signing keygen failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$sign_key_status <- shiny::renderUI({
+    if (is.null(rv$sign_keys)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2",
+      shiny::HTML(sprintf(
+        "Signing keypair ready. Fingerprint: <code>%s</code>. Recipients confirm this against your known key.",
+        sign_fingerprint(rv$sign_keys$public))),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_sign_pub", ".signpub", class = "btn-outline-primary btn-sm me-2"),
+        shiny::downloadButton("dl_sign_sec", ".signsecret", class = "btn-outline-danger btn-sm")))
+  })
+
+  .sign_hex_file <- function(bytes, kind)
+    paste0("# shinyEncrypt ML-DSA-65 signing ", kind, ", hex:\n",
+           sodium::bin2hex(as_raw(bytes)), "\n")
+  output$dl_sign_pub <- shiny::downloadHandler(
+    filename = function() "signer_mldsa.signpub",
+    content  = function(file) writeLines(.sign_hex_file(rv$sign_keys$public, "PUBLIC key"), file))
+  output$dl_sign_sec <- shiny::downloadHandler(
+    filename = function() "signer_mldsa.signsecret",
+    content  = function(file) writeLines(.sign_hex_file(rv$sign_keys$secret, "SECRET key"), file))
+
   # ---------- Encrypt ----------
   shiny::observeEvent(input$do_encrypt, {
     shiny::req(input$infile, input$scheme)
@@ -146,6 +195,11 @@ app_server <- function(input, output, session) {
       env <- se_encrypt(payload_raw(), input$scheme, kr, params = params,
                         meta = list(orig_name = im$orig_name, orig_kind = im$kind,
                                     compressed = isTRUE(input$gzip)))
+      if (isTRUE(input$sign_env)) {
+        if (is.null(rv$sign_keys))
+          stop("Signing is on but no signing keypair exists — click 'Generate signing keypair' first.")
+        env <- envelope_sign(env, rv$sign_keys$secret, rv$sign_keys$public)
+      }
       rv$env <- env; rv$keyres <- kr
       rv$keyfiles <- key_material_files(kr, input$scheme)
       shiny::showNotification("Encrypted successfully.", type = "message")
@@ -158,16 +212,20 @@ app_server <- function(input, output, session) {
   output$enc_summary <- shiny::renderText({
     env <- rv$env; shiny::req(env)
     p <- env$params
+    sig <- if (!is.null(env$signature))
+      sprintf("\nSigned     : %s · fp %s", env$signature$alg,
+              sign_fingerprint(sodium::hex2bin(env$signature$public_key))) else ""
     sprintf(paste0("Scheme     : %s\nOriginal   : %s (kind=%s%s)\n",
                    "Ciphertext : %d bytes (base64)\nDigest(%s) : %s\n",
-                   "Nonce/IV   : %s\nKey source : %s%s"),
+                   "Nonce/IV   : %s\nKey source : %s%s%s"),
       env$scheme, env$orig_name, env$orig_kind,
       if (env$compressed) ", gzip" else "",
       nchar(env$ciphertext_b64), env$pt_algo, env$pt_digest,
       p$nonce %||% p$iv %||% "(n/a)",
       env$key_source$type,
       if (!is.null(rv$keyres$key_export))
-        "  ⚠ DOWNLOAD THE KEY BELOW — it is the only copy." else "")
+        "  ⚠ DOWNLOAD THE KEY BELOW — it is the only copy." else "",
+      sig)
   })
 
   output$downloads <- shiny::renderUI({
@@ -219,6 +277,21 @@ app_server <- function(input, output, session) {
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
+  })
+
+  output$dec_signature <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env)) return(NULL)
+    v <- tryCatch(envelope_verify(env), error = function(e) list(status = "invalid"))
+    if (identical(v$status, "unsigned")) return(NULL)   # nothing to show
+    if (identical(v$status, "valid"))
+      shiny::div(class = "alert alert-success small py-2",
+        shiny::HTML(sprintf(
+          "&#128274; Signature <b>VALID</b> (%s). Signer fingerprint: <code>%s</code> — confirm it matches the sender's known key.",
+          v$alg, v$fingerprint)))
+    else
+      shiny::div(class = "alert alert-danger small py-2",
+        shiny::HTML("&#9888; Signature <b>INVALID</b> — this artifact was altered or was not signed by the claimed key. Do not trust it."))
   })
 
   shiny::observeEvent(input$do_decrypt, {
@@ -302,7 +375,8 @@ app_server <- function(input, output, session) {
   # not wake them until a tab change — which leaves the Encrypt tab blank after an
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
-               "pqc_key_status", "dec_source_hint", "dec_summary", "dec_preview",
+               "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature",
+               "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }

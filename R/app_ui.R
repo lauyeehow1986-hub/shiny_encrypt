@@ -62,6 +62,7 @@ ui_encrypt <- function() {
       shiny::textInput("nonce", "Nonce/IV (optional — blank = secure random)", ""),
       shiny::helpText(class = "small text-muted",
                       "Leave blank for a random nonce (recommended). Any text is accepted; exact-length hex is used verbatim."),
+      shiny::uiOutput("sign_ui"),
       shiny::actionButton("do_encrypt", "Encrypt", class = "btn-primary w-100"),
       .disclaimer()
     ),
@@ -95,6 +96,7 @@ ui_decrypt <- function() {
     bslib::card(
       bslib::card_header("Recovered data"),
       bslib::card_body(
+        shiny::uiOutput("dec_signature"),
         shiny::verbatimTextOutput("dec_summary"),
         shiny::uiOutput("dec_downloads"),
         shiny::tableOutput("dec_preview")

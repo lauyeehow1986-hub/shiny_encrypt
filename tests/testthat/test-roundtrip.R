@@ -111,11 +111,41 @@ test_that("hybrid PQC key source (if built) encrypts to a public key, decrypts w
   expect_error(se_decrypt(env_rt, other$secret))             # wrong recipient fails
 })
 
+test_that("ML-DSA envelope signing (if built) survives round-trip and catches tampering", {
+  skip_if_not(crypto_backend_available("ml-dsa"), "native PQC backend not built")
+  sk <- native_mldsa_keygen()
+  kr <- resolve_key(list(type = "random"))
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "s.bin"))
+
+  # unsigned envelope reports as such
+  expect_identical(envelope_verify(env)$status, "unsigned")
+
+  signed <- envelope_sign(env, sk$secret, sk$public)
+  expect_identical(signed$signature$alg, "ml-dsa-65")
+
+  # survives serialize -> parse and verifies valid
+  rt <- envelope_parse(build_txt_export(signed))
+  v <- envelope_verify(rt)
+  expect_identical(v$status, "valid")
+  expect_identical(v$fingerprint, sign_fingerprint(sk$public))
+
+  # tampering with the ciphertext breaks the signature
+  bad <- rt; bad$ciphertext_b64 <- paste0("A", substring(bad$ciphertext_b64, 2))
+  expect_identical(envelope_verify(bad)$status, "invalid")
+
+  # substituting a different signer's public key is rejected too
+  other <- native_mldsa_keygen()
+  wrong <- rt; wrong$signature$public_key <- sodium::bin2hex(other$public)
+  expect_identical(envelope_verify(wrong)$status, "invalid")
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
   expect_true(all(c("aead-secretbox", "aead-aesgcm") %in% s$id[s$available]))
-  # The hybrid KEM row reports available only when the native backend is built.
+  # The hybrid KEM + ML-DSA rows report available only when the backend is built.
   expect_equal("hpke-hybrid" %in% s$id[s$available],
                crypto_backend_available("hpke-hybrid"))
+  expect_equal("ml-dsa" %in% s$id[s$available],
+               crypto_backend_available("ml-dsa"))
 })

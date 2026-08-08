@@ -36,7 +36,7 @@ register_all_schemes <- function() {
     cap("hpke-hybrid"))
   .register_scheme_placeholder("ml-dsa", "Native",
     "ML-DSA (Dilithium) signature over the envelope", "the native PQC crate",
-    "FIPS 204 signatures. Native primitive is built; envelope-signing UI is pending.",
+    "FIPS 204 signatures — enable 'Sign this envelope (ML-DSA-65)' on the Encrypt tab; the Decrypt tab verifies and shows the signer fingerprint.",
     cap("ml-dsa"))
   .register_scheme_placeholder("cp-abe", "Native",
     "Attribute-Based Encryption (CP-ABE)", "the native rabe crate",
