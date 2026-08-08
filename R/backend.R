@@ -54,6 +54,7 @@ load_native_backend <- function(quiet = TRUE) {
     caps <- "argon2id"
     if (has("wrap__native_hybrid_keygen")) caps <- c(caps, "hpke-hybrid")
     if (has("wrap__native_mldsa_keygen"))  caps <- c(caps, "ml-dsa")
+    if (has("wrap__native_shamir_split"))  caps <- c(caps, "shamir")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -129,6 +130,25 @@ native_mldsa_verify <- function(public_key, message, signature) {
   .require_native()
   identical(.Call("wrap__native_mldsa_verify", as_raw(public_key),
                   as_raw(message), as_raw(signature)), 1L)
+}
+
+# ---- Shamir secret sharing (t-of-n) ----------------------------------------
+# Split `secret` (raw) into `n` shares, any `t` of which reconstruct it. Returns
+# a list of `n` raw share vectors, each (1 + length(secret)) bytes.
+native_shamir_split <- function(secret, t, n) {
+  .require_native()
+  n <- as.integer(n)
+  total <- .Call("wrap__native_shamir_split", as_raw(secret), as.integer(t), n)
+  sl <- length(total) %/% n
+  lapply(seq_len(n), function(i) total[((i - 1L) * sl + 1L):(i * sl)])
+}
+
+# Reconstruct the secret from a raw concatenation of >= t shares, each `share_len`
+# bytes. Supplying fewer than the original threshold yields a wrong key (the AEAD
+# tag then rejects it on decrypt).
+native_shamir_combine <- function(shares_concat, share_len) {
+  .require_native()
+  .Call("wrap__native_shamir_combine", as_raw(shares_concat), as.integer(share_len))
 }
 
 native_backends_status <- function() {

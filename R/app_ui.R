@@ -57,6 +57,14 @@ ui_encrypt <- function() {
                             class = "btn-outline-primary btn-sm mb-2 w-100"),
         shiny::uiOutput("pqc_key_status"),
         shiny::fileInput("pqc_pub_up", "…or upload a recipient public key (.pub)")),
+      shiny::conditionalPanel(
+        "input.keysrc == 'shamir'",
+        shiny::helpText(class = "small text-muted",
+          "Split a fresh random key across n custodians; any t of them ",
+          "reconstruct it, fewer reveal nothing. Download all n share files."),
+        shiny::div(class = "d-flex gap-2",
+          shiny::numericInput("shamir_t", "Threshold t", value = 2, min = 1, max = 255, step = 1),
+          shiny::numericInput("shamir_n", "Shares n", value = 3, min = 1, max = 255, step = 1))),
       shiny::hr(),
       shiny::selectInput("scheme", "Encryption scheme", choices = NULL),
       shiny::textInput("nonce", "Nonce/IV (optional — blank = secure random)", ""),
@@ -91,6 +99,7 @@ ui_decrypt <- function() {
       shiny::uiOutput("dec_signpub_ui"),
       shiny::passwordInput("dec_secret", "Passphrase / free text (if used)"),
       shiny::fileInput("dec_keyfile", "…or key file (for random-key / key-file sources)"),
+      shiny::uiOutput("dec_shares_ui"),
       shiny::actionButton("do_decrypt", "Decrypt", class = "btn-primary w-100"),
       .disclaimer()
     ),

@@ -28,3 +28,5 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 hkdf = "0.12"
 sha2 = "0.10"
+# Shamir secret sharing (t-of-n) over GF(256). Pure Rust, no C deps.
+sharks = "0.5"

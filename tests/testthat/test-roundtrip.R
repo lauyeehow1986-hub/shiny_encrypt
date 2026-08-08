@@ -145,6 +145,37 @@ test_that("ML-DSA envelope signing (if built) survives round-trip and catches ta
   expect_false(envelope_verify(rt, expected_public = other$public)$expected_match)
 })
 
+test_that("native Shamir (if built) splits t-of-n, recombines, and needs the threshold", {
+  skip_if_not(crypto_backend_available("shamir"), "native Shamir backend not built")
+  secret <- sodium::random(32L)
+  shares <- native_shamir_split(secret, t = 3L, n = 5L)
+  expect_length(shares, 5)
+  expect_true(all(vapply(shares, length, integer(1)) == 33L))   # 1 + 32
+
+  # any 3 recombine to the exact secret, in any order
+  pick <- do.call(c, shares[c(5, 1, 3)])
+  expect_identical(native_shamir_combine(pick, 33L), secret)
+  # a different 3 also works
+  expect_identical(native_shamir_combine(do.call(c, shares[c(2, 4, 5)]), 33L), secret)
+  # fewer than t yields the WRONG secret (Shamir does not error; the AEAD tag does)
+  expect_false(identical(native_shamir_combine(do.call(c, shares[c(1, 2)]), 33L), secret))
+})
+
+test_that("Shamir key source (if built) round-trips through t shares, fails under threshold", {
+  skip_if_not(crypto_backend_available("shamir"), "native Shamir backend not built")
+  kr <- resolve_key(list(type = "shamir", t = 2L, n = 3L))
+  expect_identical(kr$source_meta$type, "shamir")
+  expect_length(kr$shares, 3)
+  sl <- kr$source_meta$share_len
+
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "sh.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+  # any 2 of 3 shares decrypt
+  expect_identical(se_decrypt(env_rt, do.call(c, kr$shares[c(1, 3)])), payload)
+  # 1 share cannot (wrong key -> AEAD tag rejects)
+  expect_error(se_decrypt(env_rt, kr$shares[[2]]))
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
@@ -154,4 +185,6 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("hpke-hybrid"))
   expect_equal("ml-dsa" %in% s$id[s$available],
                crypto_backend_available("ml-dsa"))
+  expect_equal("shamir" %in% s$id[s$available],
+               crypto_backend_available("shamir"))
 })

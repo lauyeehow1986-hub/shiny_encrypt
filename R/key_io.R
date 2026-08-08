@@ -17,6 +17,21 @@ key_material_files <- function(keyres, scheme_id = "aead") {
         sodium::bin2hex(keyres$key_export), "\n")
     )
   }
+  # Shamir custody: one file per custodian; any t reconstruct the key.
+  if (!is.null(keyres$shares)) {
+    n <- length(keyres$shares)
+    t <- keyres$source_meta$t %||% n
+    for (i in seq_len(n)) {
+      files[[sprintf("share_%d", i)]] <- list(
+        name = sprintf("share_%d_of_%d.txt", i, n),
+        text = paste0(
+          sprintf("# shinyEncrypt Shamir share %d of %d (threshold t=%d).\n", i, n, t),
+          sprintf("# Distribute to separate custodians. ANY %d of the %d shares\n", t, n),
+          "# reconstruct the key on the Decrypt tab; fewer reveal nothing. hex:\n",
+          sodium::bin2hex(keyres$shares[[i]]), "\n")
+      )
+    }
+  }
   files
 }
 

@@ -36,6 +36,8 @@ app_server <- function(input, output, session) {
               "Key file" = "keyfile")
     if (isTRUE(crypto_backend_available("hpke-hybrid")))
       ksrc <- c(ksrc, "Recipient public key (PQC hybrid)" = "hybrid_pqc")
+    if (isTRUE(crypto_backend_available("shamir")))
+      ksrc <- c(ksrc, "Random key, split into Shamir shares (t-of-n)" = "shamir")
     shiny::updateSelectInput(session, "keysrc", choices = ksrc,
                              selected = shiny::isolate(input$keysrc))
   })
@@ -100,7 +102,10 @@ app_server <- function(input, output, session) {
         if (!is.null(input$pqc_pub_up)) read_secret_bytes(input$pqc_pub_up$datapath)
         else if (!is.null(rv$pqc_keys)) rv$pqc_keys$public
         else stop("Generate a PQC keypair or upload a recipient public key first.")
-      }))
+      }),
+      "shamir"        = list(type = "shamir",
+                             t = as.integer(input$shamir_t %||% 2L),
+                             n = as.integer(input$shamir_n %||% 3L)))
   }
 
   # ---- PQC keypair generation (hybrid X25519 + ML-KEM-768) ----
@@ -274,9 +279,23 @@ app_server <- function(input, output, session) {
       "passphrase"    = "This artifact used a PASSPHRASE — type it above.",
       "freetext_hash" = "This artifact used FREE TEXT — type the exact text above.",
       "hybrid_pqc"    = "This artifact used a PQC HYBRID key — upload the recipient's .secret key below.",
+      "shamir"        = sprintf("This artifact used SHAMIR custody — upload at least %d of the %d share files below.",
+                                as.integer(env$key_source$t %||% 2L), as.integer(env$key_source$n %||% 3L)),
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
+  })
+
+  # Shamir share upload: shown only when the artifact used the shamir source.
+  output$dec_shares_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || !identical(env$key_source$type, "shamir")) return(NULL)
+    t <- as.integer(env$key_source$t %||% 2L); n <- as.integer(env$key_source$n %||% 3L)
+    shiny::tagList(
+      shiny::fileInput("dec_shares", sprintf("Shamir shares (upload any %d of %d)", t, n),
+                       multiple = TRUE),
+      shiny::helpText(class = "small text-muted",
+        sprintf("Select %d or more share_*.txt files at once. Fewer than %d cannot recover the key.", t, t)))
   })
 
   # Optional signer-key pinning: shown only for signed artifacts. Uploading the
@@ -321,7 +340,15 @@ app_server <- function(input, output, session) {
     tryCatch({
       env <- dec_env()
       t <- env$key_source$type
-      secret <- if (t %in% c("random", "keyfile", "hybrid_pqc")) {
+      secret <- if (t == "shamir") {
+        if (is.null(input$dec_shares) || nrow(input$dec_shares) < 1)
+          stop("This artifact needs its SHAMIR shares — upload the share_*.txt files below.")
+        need <- as.integer(env$key_source$t %||% 2L)
+        if (nrow(input$dec_shares) < need)
+          stop(sprintf("Need at least %d shares to reconstruct the key; you uploaded %d.",
+                       need, nrow(input$dec_shares)))
+        do.call(c, lapply(input$dec_shares$datapath, read_secret_bytes))  # concat shares
+      } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
                  "This artifact needs the recipient's PQC SECRET key — upload it in the key-file box below."
@@ -399,7 +426,7 @@ app_server <- function(input, output, session) {
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
                "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature",
-               "dec_signpub_ui", "dec_source_hint", "dec_summary", "dec_preview",
+               "dec_signpub_ui", "dec_shares_ui", "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }

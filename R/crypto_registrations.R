@@ -55,7 +55,8 @@ register_all_schemes <- function() {
     "Decrypt only after time T. Build the native package to enable.", cap("tlock"))
   .register_scheme_placeholder("shamir", "Native",
     "Shamir secret sharing of the data key (t-of-n)", "the native sharks crate",
-    "Split the key across custodians. Build the native package to enable.", cap("shamir"))
+    "Split the key across custodians — offered as the 'Random key, split into Shamir shares' KEY SOURCE on the Encrypt tab; upload any t shares to decrypt.",
+    cap("shamir"))
 
   # Heavy (real, but compute/memory-bound; size-guarded)
   .register_scheme_placeholder("tfhe", "Heavy",

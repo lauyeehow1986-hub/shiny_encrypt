@@ -25,6 +25,8 @@ use sha2::Sha256;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 use rand_core::OsRng;
 
+use sharks::{Share, Sharks};
+
 // ---- fixed lengths (bytes) --------------------------------------------------
 const X_SK: usize = 32;   // X25519 secret
 const X_PK: usize = 32;   // X25519 public
@@ -193,6 +195,59 @@ fn native_mldsa_verify(pk_bytes: &[u8], msg: &[u8], sig: &[u8]) -> std::result::
 }
 
 // ============================================================================
+// Shamir secret sharing (t-of-n) over GF(256). Splits the data key across
+// custodians: any t shares reconstruct it, any t-1 reveal nothing.
+// ============================================================================
+
+/// Split `secret` into `n` shares, any `t` of which reconstruct it. Every share
+/// serializes to (1 + secret.len()) bytes: [x_index, y_bytes...], and each x is
+/// distinct (1..=n), so shares can be recombined in any order. Returns all n
+/// shares concatenated; R slices them into equal-length chunks.
+#[extendr]
+fn native_shamir_split(secret: &[u8], t: i32, n: i32) -> std::result::Result<Vec<u8>, String> {
+    if secret.is_empty() {
+        return Err("shamir: secret must be non-empty".to_string());
+    }
+    if !(1..=255).contains(&t) || !(1..=255).contains(&n) || t > n {
+        return Err(format!("shamir: need 1 <= t <= n <= 255 (got t={t}, n={n})"));
+    }
+    let sharks = Sharks(t as u8);
+    let dealer = sharks.dealer(secret);
+    let share_len = 1 + secret.len();
+    let mut out = Vec::with_capacity(n as usize * share_len);
+    for s in dealer.take(n as usize) {
+        let bytes = Vec::from(&s);
+        if bytes.len() != share_len {
+            return Err("shamir: unexpected share length".to_string());
+        }
+        out.extend_from_slice(&bytes);
+    }
+    Ok(out)
+}
+
+/// Reconstruct the secret from `shares_concat` (each `share_len` bytes). Shamir
+/// interpolation silently yields the wrong secret if fewer than the original
+/// threshold are supplied, so the caller must pass at least `t` shares; a wrong
+/// key is then caught by the AEAD tag on decrypt. Returns the recovered secret.
+#[extendr]
+fn native_shamir_combine(shares_concat: &[u8], share_len: i32) -> std::result::Result<Vec<u8>, String> {
+    let sl = share_len as usize;
+    if sl < 2 || shares_concat.is_empty() || shares_concat.len() % sl != 0 {
+        return Err(format!("shamir: shares not a whole multiple of share_len={sl}"));
+    }
+    let shares: Vec<Share> = shares_concat
+        .chunks(sl)
+        .map(|c| Share::try_from(c).map_err(|e| format!("shamir: bad share: {e}")))
+        .collect::<std::result::Result<_, _>>()?;
+    // The real threshold is not encoded in shares; recover interpolates whatever
+    // it is given, so set the modulus to the count provided (never over-rejects).
+    let sharks = Sharks(shares.len() as u8);
+    sharks
+        .recover(shares.as_slice())
+        .map_err(|e| format!("shamir: recover failed: {e}"))
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -209,5 +264,7 @@ extendr_module! {
     fn native_mldsa_keygen;
     fn native_mldsa_sign;
     fn native_mldsa_verify;
+    fn native_shamir_split;
+    fn native_shamir_combine;
     fn native_backend_version;
 }

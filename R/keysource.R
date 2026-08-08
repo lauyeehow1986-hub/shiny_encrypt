@@ -6,7 +6,8 @@
 #                 recoverable later (the random-key source).
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
-KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc")
+KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc",
+                 "shamir")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -55,6 +56,17 @@ resolve_key <- function(spec) {
            source_meta = list(type = "hybrid_pqc", kem = "x25519-mlkem768",
                               encapsulation = raw_to_base64(enc$encapsulation)),
            key_export = NULL)   # recipient decrypts with their downloaded secret bundle
+    },
+    "shamir" = {
+      key <- as.raw(spec$key %||% sodium::random(32L))
+      t <- as.integer(spec$t %||% 2L); n <- as.integer(spec$n %||% 3L)
+      if (t > n) stop("Shamir: threshold t must not exceed the number of shares n.")
+      shares <- native_shamir_split(key, t, n)   # list of n raw shares
+      list(key = key, salt = NULL,
+           source_meta = list(type = "shamir", t = t, n = n,
+                              share_len = length(shares[[1]])),
+           key_export = NULL,          # the key itself is never stored — only shares
+           shares = shares)            # downloaded as t-of-n custodian files
     }
   )
 }
@@ -78,6 +90,11 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       encap <- base64_to_raw(source_meta$encapsulation %||%
                                stop("Artifact is missing its KEM encapsulation."))
       native_hybrid_decaps(as_raw(secret), encap)   # secret = recipient secret bundle
+    },
+    "shamir" = {
+      sl <- as.integer(source_meta$share_len %||%
+                         stop("Artifact is missing its Shamir share length."))
+      native_shamir_combine(as_raw(secret), sl)      # secret = concatenated shares
     },
     stop(sprintf("Unknown key source: %s", type))
   )
