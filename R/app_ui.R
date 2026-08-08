@@ -88,6 +88,7 @@ ui_decrypt <- function() {
       shiny::fileInput("artifact", "Upload .txt or .R artifact",
                        accept = c(".txt", ".R", ".r")),
       shiny::uiOutput("dec_source_hint"),
+      shiny::uiOutput("dec_signpub_ui"),
       shiny::passwordInput("dec_secret", "Passphrase / free text (if used)"),
       shiny::fileInput("dec_keyfile", "…or key file (for random-key / key-file sources)"),
       shiny::actionButton("do_decrypt", "Decrypt", class = "btn-primary w-100"),

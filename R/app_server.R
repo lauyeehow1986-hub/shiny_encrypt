@@ -279,19 +279,42 @@ app_server <- function(input, output, session) {
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
   })
 
+  # Optional signer-key pinning: shown only for signed artifacts. Uploading the
+  # sender's out-of-band .signpub upgrades "valid by someone" to "valid by them".
+  output$dec_signpub_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || is.null(env$signature)) return(NULL)
+    shiny::tagList(
+      shiny::fileInput("dec_signpub", "Pin expected signer public key (.signpub) — optional"),
+      shiny::helpText(class = "small text-muted",
+        "Upload the sender's .signpub (obtained out-of-band) to confirm the signature is from them specifically, not just from someone."))
+  })
+
   output$dec_signature <- shiny::renderUI({
     env <- tryCatch(dec_env(), error = function(e) NULL)
     if (is.null(env)) return(NULL)
-    v <- tryCatch(envelope_verify(env), error = function(e) list(status = "invalid"))
+    exp_pub <- if (!is.null(input$dec_signpub))
+      tryCatch(read_secret_bytes(input$dec_signpub$datapath), error = function(e) NULL) else NULL
+    v <- tryCatch(envelope_verify(env, expected_public = exp_pub),
+                  error = function(e) list(status = "invalid", expected_match = NA))
     if (identical(v$status, "unsigned")) return(NULL)   # nothing to show
-    if (identical(v$status, "valid"))
-      shiny::div(class = "alert alert-success small py-2",
+    danger <- function(html) shiny::div(class = "alert alert-danger small py-2", shiny::HTML(html))
+    if (!identical(v$status, "valid"))
+      return(danger("&#9888; Signature <b>INVALID</b> — this artifact was altered or was not signed by the claimed key. Do not trust it."))
+    # cryptographically valid — refine by the pin, if one was supplied
+    if (isFALSE(v$expected_match))
+      return(danger(sprintf(paste0(
+        "&#9888; Signature is cryptographically valid, but the signer key <code>%s</code> does <b>NOT</b> match the .signpub you pinned. ",
+        "This is not from your expected sender — reject it."), v$fingerprint)))
+    if (isTRUE(v$expected_match))
+      return(shiny::div(class = "alert alert-success small py-2",
         shiny::HTML(sprintf(
-          "&#128274; Signature <b>VALID</b> (%s). Signer fingerprint: <code>%s</code> — confirm it matches the sender's known key.",
-          v$alg, v$fingerprint)))
-    else
-      shiny::div(class = "alert alert-danger small py-2",
-        shiny::HTML("&#9888; Signature <b>INVALID</b> — this artifact was altered or was not signed by the claimed key. Do not trust it."))
+          "&#128274; Signature <b>VALID</b> (%s) and matches your <b>pinned</b> signer: <code>%s</code>. Authenticated.",
+          v$alg, v$fingerprint))))
+    shiny::div(class = "alert alert-success small py-2",
+      shiny::HTML(sprintf(
+        "&#128274; Signature <b>VALID</b> (%s). Signer fingerprint: <code>%s</code> — confirm it matches the sender's known key (or pin their .signpub below).",
+        v$alg, v$fingerprint)))
   })
 
   shiny::observeEvent(input$do_decrypt, {
@@ -376,7 +399,7 @@ app_server <- function(input, output, session) {
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
                "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature",
-               "dec_source_hint", "dec_summary", "dec_preview",
+               "dec_signpub_ui", "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }

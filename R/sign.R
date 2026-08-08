@@ -56,16 +56,31 @@ envelope_sign <- function(env, secret_key, public_key) {
 # Verify an envelope's signature (if any). Returns a list describing the outcome:
 #   status = "unsigned" | "valid" | "invalid"
 #   alg, public_key (hex), fingerprint  (present when a signature block exists)
-envelope_verify <- function(env) {
+#   expected_match = NA (no pin) | TRUE | FALSE
+#
+# A valid signature only proves the envelope was not altered since *whoever holds
+# the embedded public key* signed it. Pass `expected_public` (the sender's
+# out-of-band .signpub, raw or hex) to also assert the signer is that specific
+# party: expected_match is TRUE only when the embedded key equals the pinned one.
+envelope_verify <- function(env, expected_public = NULL) {
   s <- env$signature
   if (is.null(s) || is.null(s$sig) || is.null(s$public_key))
-    return(list(status = "unsigned"))
+    return(list(status = "unsigned", expected_match = NA))
   pub <- tryCatch(sodium::hex2bin(s$public_key), error = function(e) NULL)
   ok <- tryCatch(
     !is.null(pub) &&
       native_mldsa_verify(pub, .envelope_signing_digest(env), base64_to_raw(s$sig)),
     error = function(e) FALSE)
+  expected_match <- NA
+  if (!is.null(expected_public)) {
+    eh <- tryCatch(
+      if (is.character(expected_public)) gsub("[[:space:]]", "", expected_public)
+      else sodium::bin2hex(as_raw(expected_public)),
+      error = function(e) NA_character_)
+    expected_match <- !is.na(eh) && identical(tolower(eh), tolower(s$public_key))
+  }
   list(status = if (isTRUE(ok)) "valid" else "invalid",
        alg = s$alg %||% SIGN_ALG, public_key = s$public_key,
-       fingerprint = if (!is.null(pub)) sign_fingerprint(pub) else "(unreadable key)")
+       fingerprint = if (!is.null(pub)) sign_fingerprint(pub) else "(unreadable key)",
+       expected_match = expected_match)
 }

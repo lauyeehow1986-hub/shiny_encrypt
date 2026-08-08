@@ -137,6 +137,12 @@ test_that("ML-DSA envelope signing (if built) survives round-trip and catches ta
   other <- native_mldsa_keygen()
   wrong <- rt; wrong$signature$public_key <- sodium::bin2hex(other$public)
   expect_identical(envelope_verify(wrong)$status, "invalid")
+
+  # pinning the expected signer: no pin -> NA, right key -> TRUE, wrong -> FALSE
+  expect_true(is.na(envelope_verify(rt)$expected_match))
+  expect_true(envelope_verify(rt, expected_public = sk$public)$expected_match)
+  expect_true(envelope_verify(rt, expected_public = sodium::bin2hex(sk$public))$expected_match)
+  expect_false(envelope_verify(rt, expected_public = other$public)$expected_match)
 })
 
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
