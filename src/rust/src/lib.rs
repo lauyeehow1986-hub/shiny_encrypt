@@ -22,8 +22,13 @@ use fips204::traits::{SerDes as SigSerDes, Signer, Verifier};
 
 use hkdf::Hkdf;
 use sha2::Sha256;
+use sha2::{Digest, Sha512};
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
+
+use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
+use curve25519_dalek::scalar::Scalar;
 
 use sharks::{Share, Sharks};
 
@@ -657,6 +662,180 @@ fn native_ibe_decaps(usk: &[u8], ct: &[u8]) -> std::result::Result<Vec<u8>, Stri
     Ok(ss.0.to_vec())
 }
 
+// ---- OPRF (verifiable oblivious PRF, ristretto255 + SHA-512) ---------------
+// A VOPRF lets a client compute F_k(input) with the key holder's key k WITHOUT
+// revealing `input` to the key holder, and WITHOUT learning k — the output is a
+// pseudorandom function of (input, k) that neither party could compute alone.
+// This is the ristretto255 group; the DLEQ proof makes it *verifiable* (the
+// client checks the key holder used the committed key). Not wire-compatible with
+// other RFC 9497 suites (self-consistent DSTs), which is fine for single-machine
+// use: the app plays both client and server, and decrypt reproduces the key
+// because the random blind cancels out.
+
+const OPRF_DST_GROUP: &[u8] = b"shinyEncrypt-OPRF-ristretto255-v1-HashToGroup";
+const OPRF_DST_SCALAR: &[u8] = b"shinyEncrypt-OPRF-ristretto255-v1-Challenge";
+const OPRF_DST_FINAL: &[u8] = b"shinyEncrypt-OPRF-ristretto255-v1-Finalize";
+
+fn oprf_rand_scalar() -> Scalar {
+    let mut b = [0u8; 64];
+    OsRng.fill_bytes(&mut b);
+    Scalar::from_bytes_mod_order_wide(&b)
+}
+
+// Map an arbitrary input to a group element (random oracle): 64 uniform SHA-512
+// bytes through ristretto's one-way map.
+fn oprf_hash_to_group(input: &[u8]) -> RistrettoPoint {
+    let mut h = Sha512::new();
+    h.update(OPRF_DST_GROUP);
+    h.update((input.len() as u64).to_be_bytes());
+    h.update(input);
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    RistrettoPoint::from_uniform_bytes(&wide)
+}
+
+fn oprf_hash_to_scalar(parts: &[&[u8]]) -> Scalar {
+    let mut h = Sha512::new();
+    h.update(OPRF_DST_SCALAR);
+    for p in parts {
+        h.update(p);
+    }
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    Scalar::from_bytes_mod_order_wide(&wide)
+}
+
+fn oprf_scalar_from(bytes: &[u8], what: &str) -> std::result::Result<Scalar, String> {
+    if bytes.len() != 32 {
+        return Err(format!("oprf: {what} must be 32 bytes"));
+    }
+    let mut b = [0u8; 32];
+    b.copy_from_slice(bytes);
+    Ok(Scalar::from_bytes_mod_order(b))
+}
+
+fn oprf_key_scalar(key: &[u8]) -> std::result::Result<Scalar, String> {
+    let k = oprf_scalar_from(key, "key")?;
+    if k == Scalar::ZERO {
+        return Err("oprf: invalid (zero) key".into());
+    }
+    Ok(k)
+}
+
+fn oprf_point_from(bytes: &[u8], what: &str) -> std::result::Result<RistrettoPoint, String> {
+    if bytes.len() != 32 {
+        return Err(format!("oprf: {what} must be 32 bytes"));
+    }
+    CompressedRistretto::from_slice(bytes)
+        .map_err(|_| format!("oprf: {what} is not a valid point encoding"))?
+        .decompress()
+        .ok_or_else(|| format!("oprf: {what} is not a valid ristretto point"))
+}
+
+/// Generate a 32-byte OPRF secret key (a ristretto255 scalar).
+#[extendr]
+fn native_oprf_keygen() -> Vec<u8> {
+    oprf_rand_scalar().to_bytes().to_vec()
+}
+
+/// Public (verification) key for a VOPRF secret key: k*G, 32 compressed bytes.
+/// Shareable — lets the client verify the DLEQ proof without learning k.
+#[extendr]
+fn native_oprf_public_key(key: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    let k = oprf_key_scalar(key)?;
+    Ok((RISTRETTO_BASEPOINT_POINT * k).compress().to_bytes().to_vec())
+}
+
+/// Client blind: returns blind_scalar(32) || blinded_element(32). The blinded
+/// element hides `input` from the OPRF key holder (it is input*r on the curve).
+#[extendr]
+fn native_oprf_blind(input: &[u8]) -> Vec<u8> {
+    let r = oprf_rand_scalar();
+    let b = r * oprf_hash_to_group(input);
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&r.to_bytes());
+    out.extend_from_slice(&b.compress().to_bytes());
+    out
+}
+
+/// Server evaluate: E = k*B, plus a Chaum-Pedersen DLEQ proof that the same k
+/// underlies the public key k*G. Returns evaluated(32) || dleq_c(32) || dleq_z(32).
+/// The key holder sees only the blinded element, never the client's input.
+#[extendr]
+fn native_oprf_evaluate(key: &[u8], blinded: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    let k = oprf_key_scalar(key)?;
+    let b = oprf_point_from(blinded, "blinded element")?;
+    let e = k * b;
+    let pk = RISTRETTO_BASEPOINT_POINT * k;
+    // DLEQ: prove log_G(pk) == log_B(e) == k without revealing k.
+    let t = oprf_rand_scalar();
+    let k1 = RISTRETTO_BASEPOINT_POINT * t;
+    let k2 = b * t;
+    let c = oprf_hash_to_scalar(&[
+        &pk.compress().to_bytes(),
+        &b.compress().to_bytes(),
+        &e.compress().to_bytes(),
+        &k1.compress().to_bytes(),
+        &k2.compress().to_bytes(),
+    ]);
+    let z = t + c * k;
+    let mut out = Vec::with_capacity(96);
+    out.extend_from_slice(&e.compress().to_bytes());
+    out.extend_from_slice(&c.to_bytes());
+    out.extend_from_slice(&z.to_bytes());
+    Ok(out)
+}
+
+/// Client finalize: verify the DLEQ proof (fails closed), unblind, and hash to a
+/// 64-byte PRF output. `blind_bundle` = blind(32)||blinded(32) from oprf_blind;
+/// `evaluated` = evaluated(32)||c(32)||z(32) from oprf_evaluate; `pubkey` = 32.
+/// The output depends only on (input, k), so re-running with a fresh blind gives
+/// the same value — that is what makes it usable as a key-derivation function.
+#[extendr]
+fn native_oprf_finalize(
+    input: &[u8],
+    blind_bundle: &[u8],
+    evaluated: &[u8],
+    pubkey: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if blind_bundle.len() != 64 {
+        return Err("oprf: blind bundle must be 64 bytes".into());
+    }
+    if evaluated.len() != 96 {
+        return Err("oprf: evaluated bundle must be 96 bytes".into());
+    }
+    let r = oprf_scalar_from(&blind_bundle[0..32], "blind scalar")?;
+    let b = oprf_point_from(&blind_bundle[32..64], "blinded element")?;
+    let e = oprf_point_from(&evaluated[0..32], "evaluated element")?;
+    let c = oprf_scalar_from(&evaluated[32..64], "dleq c")?;
+    let z = oprf_scalar_from(&evaluated[64..96], "dleq z")?;
+    let pk = oprf_point_from(pubkey, "public key")?;
+    // Recompute the proof commitments from (c, z) and reject if the challenge
+    // disagrees: guarantees the response used the key behind `pubkey`.
+    let k1 = RISTRETTO_BASEPOINT_POINT * z - pk * c;
+    let k2 = b * z - e * c;
+    let c_check = oprf_hash_to_scalar(&[
+        &pk.compress().to_bytes(),
+        &b.compress().to_bytes(),
+        &e.compress().to_bytes(),
+        &k1.compress().to_bytes(),
+        &k2.compress().to_bytes(),
+    ]);
+    if c_check != c {
+        return Err(
+            "oprf: DLEQ verification failed (wrong OPRF key or tampered response)".into(),
+        );
+    }
+    // Unblind: r^-1 * (k*r*P) = k*P, then hash to the final output.
+    let n = r.invert() * e;
+    let mut h = Sha512::new();
+    h.update(OPRF_DST_FINAL);
+    h.update((input.len() as u64).to_be_bytes());
+    h.update(input);
+    h.update(n.compress().to_bytes());
+    Ok(h.finalize().to_vec())
+}
+
 // ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
@@ -689,5 +868,10 @@ extendr_module! {
     fn native_ibe_extract;
     fn native_ibe_encaps;
     fn native_ibe_decaps;
+    fn native_oprf_keygen;
+    fn native_oprf_public_key;
+    fn native_oprf_blind;
+    fn native_oprf_evaluate;
+    fn native_oprf_finalize;
     fn native_backend_version;
 }

@@ -56,6 +56,10 @@ register_all_schemes <- function() {
     "Format-Preserving Encryption (FF1)", "the native fpe crate",
     "Column-level de-identification that keeps each field's length and character class — use the 'De-identify (FPE)' tab to tokenise ID columns and reverse them with the .fpekit.",
     cap("fpe-ff1"))
+  .register_scheme_placeholder("oprf", "Native",
+    "Oblivious PRF (verifiable, ristretto255)", "the native curve25519-dalek OPRF",
+    "Harden a low-entropy input into a key with a SEPARATELY-held OPRF key — offered as the 'OPRF-hardened input' KEY SOURCE on the Encrypt tab. The key holder never sees the input, and the derived key needs BOTH the input and the OPRF key, so a weak input resists offline guessing while the OPRF key stays apart. A DLEQ proof makes the evaluation verifiable (fails closed on a wrong key).",
+    cap("oprf"))
   .register_scheme_placeholder("pre", "Native",
     "Proxy Re-Encryption (Umbral)", "the optional GPL companion package shinyEncryptPRE",
     "Grant a receiver access to a file without decrypting it: the delegator seals to their own key and an untrusted proxy re-encrypts the ciphertext for the receiver. Ships as a SEPARATE GPL-3 package (umbral-pre is GPL-3.0) so the MIT core stays MIT; install it to get the 'Re-encrypt (PRE)' tab.",

@@ -32,6 +32,18 @@ key_material_files <- function(keyres, scheme_id = "aead") {
       )
     }
   }
+  # OPRF hardening key: the separately-held secret that (with the input) derives
+  # the data key. Ideally kept apart from the input, on another device/custodian.
+  if (!is.null(keyres$oprf_key)) {
+    files[["oprf_key"]] <- list(
+      name = "oprf_key.oprfkey",
+      text = paste0(
+        "# shinyEncrypt OPRF KEY (SECRET) - hardens the input for this file.\n",
+        "# Decrypting needs BOTH this key AND the exact input you typed.\n",
+        "# Keep it apart from the input (different device/custodian). hex(32 bytes):\n",
+        sodium::bin2hex(as_raw(keyres$oprf_key)), "\n")
+    )
+  }
   # Time-lock creator master: the puzzle solution, letting the owner skip the wait.
   if (!is.null(keyres$timelock_master)) {
     files[["timelock_master"]] <- list(

@@ -384,4 +384,64 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("cp-abe"))
   expect_equal("ibe" %in% s$id[s$available],
                crypto_backend_available("ibe"))
+  expect_equal("oprf" %in% s$id[s$available],
+               crypto_backend_available("oprf"))
+})
+
+test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
+  skip_if_not(crypto_backend_available("oprf"), "native OPRF backend not built")
+  k1 <- native_oprf_keygen()
+  expect_length(k1, 32L)
+
+  # the derived key is a PRF of (input, key): same pair -> same key, despite the
+  # random blind (two blinds of one input differ, yet finalize agrees)
+  d1 <- oprf_derive_key("patient-42", k1)
+  d2 <- oprf_derive_key("patient-42", k1)
+  expect_length(d1$key, 32L)
+  expect_identical(d1$key, d2$key)
+  b1 <- native_oprf_blind(charToRaw("patient-42"))
+  b2 <- native_oprf_blind(charToRaw("patient-42"))
+  expect_false(identical(b1, b2))                  # blinding is randomised
+
+  # sensitivity: a different input, or a different OPRF key, changes the output
+  expect_false(identical(d1$key, oprf_derive_key("patient-99", k1)$key))
+  k2 <- native_oprf_keygen()
+  expect_false(identical(d1$key, oprf_derive_key("patient-42", k2)$key))
+
+  # verifiable: finalize with the WRONG public key fails closed (DLEQ rejects)
+  bl <- native_oprf_blind(charToRaw("patient-42"))
+  ev <- native_oprf_evaluate(k1, bl[33:64])
+  expect_error(native_oprf_finalize(charToRaw("patient-42"), bl, ev,
+                                    native_oprf_public_key(k2)))
+  # tampered response (flip a byte in E) also fails closed
+  ev_bad <- ev; ev_bad[1] <- as.raw(bitwXor(as.integer(ev_bad[1]), 1L))
+  expect_error(native_oprf_finalize(charToRaw("patient-42"), bl, ev_bad,
+                                    native_oprf_public_key(k1)))
+  # degenerate inputs are rejected
+  expect_error(oprf_derive_key("", k1))            # empty input
+  expect_error(oprf_derive_key("x", sodium::random(31L)))  # wrong key length
+})
+
+test_that("OPRF key source (if built) needs both the input and the OPRF key", {
+  skip_if_not(crypto_backend_available("oprf"), "native OPRF backend not built")
+  okey <- native_oprf_keygen()
+  kr <- resolve_key(list(type = "oprf", text = "s3cret-phrase", oprf_key = okey))
+  expect_identical(kr$source_meta$type, "oprf")
+  expect_null(kr$key_export)                        # the input is remembered, not stored
+  expect_identical(kr$oprf_key, okey)              # offered for download as .oprfkey
+  expect_true(nchar(kr$source_meta$public_key) > 0)
+
+  env    <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "oprf.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+
+  # both the exact input and the OPRF key recover the file
+  ok <- list(text = "s3cret-phrase", oprf_key = okey)
+  expect_identical(se_decrypt(env_rt, ok), payload)
+  # wrong input, right key -> fails closed
+  expect_error(se_decrypt(env_rt, list(text = "wrong", oprf_key = okey)))
+  # right input, wrong key -> rejected before the AEAD even runs (pubkey mismatch)
+  expect_error(se_decrypt(env_rt, list(text = "s3cret-phrase",
+                                       oprf_key = native_oprf_keygen())))
+  # an empty input is rejected at seal time
+  expect_error(resolve_key(list(type = "oprf", text = "", oprf_key = okey)))
 })

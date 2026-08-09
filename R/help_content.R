@@ -45,6 +45,14 @@ help_html <- function() {
             Only the key for the sealed identity opens the file; others fail closed. Like CP-ABE the
             master is an escrow root and there is no revocation — rotate the authority to cut an
             identity off.</li>
+        <li><b>OPRF-hardened input</b> <i>(native)</i>: derives the key from a low-entropy
+            <b>input</b> (a passphrase, id, or secret) strengthened by a <b>separately-held OPRF
+            key</b> (<code>.oprfkey</code>), run through a verifiable oblivious PRF so the key
+            holder never sees the input. Generate or upload the 32-byte OPRF key, type the input,
+            and encrypt. The key needs <b>both</b> parts, so a weak input resists offline guessing
+            as long as the OPRF key is kept apart (another device or custodian). Decrypting needs
+            the exact input <b>and</b> the <code>.oprfkey</code>: a wrong OPRF key is rejected by a
+            DLEQ proof, a wrong input fails closed on the AEAD tag.</li>
       </ul></li>
   <li><b>Pick a scheme &amp; parameters</b> — Core AEAD (XSalsa20-Poly1305 or
       AES-256-GCM) is available now. Leave nonce/IV blank for a fresh random value,

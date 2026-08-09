@@ -46,6 +46,8 @@ app_server <- function(input, output, session) {
       ksrc <- c(ksrc, "Attribute policy (CP-ABE)" = "cpabe")
     if (isTRUE(crypto_backend_available("ibe")))
       ksrc <- c(ksrc, "Recipient identity (IBE)" = "ibe")
+    if (isTRUE(crypto_backend_available("oprf")))
+      ksrc <- c(ksrc, "OPRF-hardened input (oblivious PRF)" = "oprf")
     shiny::updateSelectInput(session, "keysrc", choices = ksrc,
                              selected = shiny::isolate(input$keysrc))
   })
@@ -132,6 +134,11 @@ app_server <- function(input, output, session) {
         if (!is.null(input$ibe_pk_up)) read_secret_bytes(input$ibe_pk_up$datapath)
         else if (!is.null(rv$ibe_keys)) rv$ibe_keys$pk
         else stop("Generate an IBE authority or upload its public key (.pub) first.")
+      }),
+      "oprf"          = list(type = "oprf", text = input$oprf_input %||% "", oprf_key = {
+        if (!is.null(input$oprf_key_up)) read_secret_bytes(input$oprf_key_up$datapath)
+        else if (!is.null(rv$oprf_key)) rv$oprf_key
+        else stop("Generate a new OPRF key or upload an existing .oprfkey first.")
       }))
   }
 
@@ -327,6 +334,33 @@ app_server <- function(input, output, session) {
       "# Upload on the Decrypt tab to open files sealed to this identity. hex:\n",
       sodium::bin2hex(as_raw(rv$ibe_issued$usk)), "\n"), file))
 
+  # ---- OPRF hardening key (verifiable oblivious PRF) ----
+  shiny::observeEvent(input$gen_oprf, {
+    tryCatch({
+      rv$oprf_key <- oprf_new_key()
+      shiny::showNotification(
+        "OPRF key generated. Download the .oprfkey and keep it secret — decrypting needs BOTH it and your exact input.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("OPRF keygen failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$oprf_key_status <- shiny::renderUI({
+    if (is.null(rv$oprf_key)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2",
+      shiny::HTML("OPRF key ready. It is SECRET and combines with your input to make the key — store the <b>.oprfkey</b> apart from the input."),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_oprf_key", ".oprfkey", class = "btn-outline-danger btn-sm")))
+  })
+
+  output$dl_oprf_key <- shiny::downloadHandler(
+    filename = function() "oprf_key.oprfkey",
+    content  = function(file) writeLines(paste0(
+      "# shinyEncrypt OPRF KEY (SECRET) - hardens your input for the encrypted file.\n",
+      "# Decrypting needs BOTH this key AND the exact input you typed.\n",
+      "# Keep it apart from the input (different device/custodian). hex(32 bytes):\n",
+      sodium::bin2hex(as_raw(rv$oprf_key)), "\n"), file))
+
   # ---- Envelope signing (ML-DSA-65) ----
   # Only offered when the native backend actually exports the signature symbols.
   output$sign_ui <- shiny::renderUI({
@@ -476,6 +510,7 @@ app_server <- function(input, output, session) {
                                 env$key_source$policy %||% "(unknown)"),
       "ibe"           = sprintf("This artifact is IBE-sealed to the identity %s — upload that identity's key below.",
                                 env$key_source$identity %||% "(unknown)"),
+      "oprf"          = "This artifact used an OPRF-HARDENED input — type the exact input and upload its .oprfkey below.",
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
@@ -534,6 +569,17 @@ app_server <- function(input, output, session) {
       shiny::helpText(class = "small text-muted",
         sprintf("Identity: %s. Only the key issued for this exact identity opens the file.",
                 env$key_source$identity %||% "(unknown)")))
+  })
+
+  # OPRF: needs BOTH the exact input and the OPRF key file to reproduce the key.
+  output$dec_oprf_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || !identical(env$key_source$type, "oprf")) return(NULL)
+    shiny::tagList(
+      shiny::passwordInput("dec_oprf_input", "The exact input you hardened"),
+      shiny::fileInput("dec_oprf_key", "OPRF key (oprf_key.oprfkey)"),
+      shiny::helpText(class = "small text-muted",
+        "Both are required: the input alone cannot derive the key without the OPRF key, and vice versa."))
   })
 
   # Optional signer-key pinning: shown only for signed artifacts. Uploading the
@@ -612,6 +658,13 @@ app_server <- function(input, output, session) {
         if (is.null(input$dec_ibe_key))
           stop("This artifact needs an IBE identity key — upload it below.")
         read_secret_bytes(input$dec_ibe_key$datapath)
+      } else if (t == "oprf") {
+        if (!nzchar(input$dec_oprf_input %||% ""))
+          stop("This artifact needs the exact input you hardened — type it below.")
+        if (is.null(input$dec_oprf_key))
+          stop("This artifact needs its OPRF key — upload the .oprfkey file below.")
+        list(text = input$dec_oprf_input,
+             oprf_key = read_secret_bytes(input$dec_oprf_key$datapath))
       } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
@@ -812,7 +865,7 @@ app_server <- function(input, output, session) {
                "ibe_key_status", "ibe_issue_status",
                "sign_ui", "sign_key_status", "dec_signature", "tl_estimate",
                "dec_signpub_ui", "dec_shares_ui", "dec_timelock_ui", "dec_cpabe_ui",
-               "dec_ibe_ui",
+               "dec_ibe_ui", "dec_oprf_ui", "oprf_key_status",
                "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
                "fpe_preview", "dp_group_ui", "dp_value_ui", "dp_status",

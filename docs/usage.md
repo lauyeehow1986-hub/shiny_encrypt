@@ -35,6 +35,13 @@
      Key Generator) that **extracts** a per-identity key. Only the key issued for that exact identity
      decrypts; others fail closed. Like CP-ABE the master is an escrow root and there is no
      revocation — rotate the authority to cut identities off.
+   - **OPRF-hardened input** *(native)*: derives the key from a **low-entropy input** (a
+     passphrase, id, or secret) hardened by a **separately-held OPRF key** (`.oprfkey`), run
+     through a **verifiable oblivious PRF** so the key holder never sees the input. Generate (or
+     upload) the 32-byte OPRF key, type the input, and encrypt. The key needs **both** parts, so a
+     weak input resists offline guessing as long as the OPRF key is kept apart. Decryption needs
+     the exact input **and** the `.oprfkey`; a wrong OPRF key is rejected (DLEQ proof), a wrong
+     input fails closed on the AEAD tag.
 4. **Pick a scheme & parameters** — Core AEAD (**XSalsa20-Poly1305** or **AES-256-GCM**) works
    now. Leave nonce/IV blank for a fresh random value, or set it (hex) for reproducible output.
    Optionally tick **Sign this envelope (ML-DSA-65)** *(native)* to attach a post-quantum signature;
@@ -126,6 +133,11 @@ pitfalls of naive continuous samplers; all noise is drawn from a cryptographical
   extract — and therefore decrypt as — *any* identity, so it is an escrow root; guard the `.master`
   the same way. The identity is stored in the envelope in clear (it names *who* may decrypt), matched
   exactly, and there is no revocation — rotate the authority to cut an identity off.
+- **OPRF hardening** is *not* public-key encryption: there is no recipient keypair. It is a way to
+  turn a weak input into a strong key using a second secret (the OPRF key) held apart, so neither
+  the input nor the OPRF key alone can derive it, and the party holding the OPRF key never sees the
+  input (the oblivious property). The security rests on keeping the two apart — put the `.oprfkey`
+  on a different device or with a different custodian than the input. Losing either loses the file.
 - **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
   part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
   separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to

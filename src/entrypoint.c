@@ -32,6 +32,11 @@ extern SEXP wrap__native_ibe_setup(void);
 extern SEXP wrap__native_ibe_extract(SEXP pk, SEXP sk, SEXP identity);
 extern SEXP wrap__native_ibe_encaps(SEXP pk, SEXP identity);
 extern SEXP wrap__native_ibe_decaps(SEXP usk, SEXP ct);
+extern SEXP wrap__native_oprf_keygen(void);
+extern SEXP wrap__native_oprf_public_key(SEXP key);
+extern SEXP wrap__native_oprf_blind(SEXP input);
+extern SEXP wrap__native_oprf_evaluate(SEXP key, SEXP blinded);
+extern SEXP wrap__native_oprf_finalize(SEXP input, SEXP blind_bundle, SEXP evaluated, SEXP pubkey);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -57,6 +62,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_ibe_extract",     (DL_FUNC) &wrap__native_ibe_extract,     3},
     {"wrap__native_ibe_encaps",      (DL_FUNC) &wrap__native_ibe_encaps,      2},
     {"wrap__native_ibe_decaps",      (DL_FUNC) &wrap__native_ibe_decaps,      2},
+    {"wrap__native_oprf_keygen",     (DL_FUNC) &wrap__native_oprf_keygen,     0},
+    {"wrap__native_oprf_public_key", (DL_FUNC) &wrap__native_oprf_public_key, 1},
+    {"wrap__native_oprf_blind",      (DL_FUNC) &wrap__native_oprf_blind,      1},
+    {"wrap__native_oprf_evaluate",   (DL_FUNC) &wrap__native_oprf_evaluate,   2},
+    {"wrap__native_oprf_finalize",   (DL_FUNC) &wrap__native_oprf_finalize,   4},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

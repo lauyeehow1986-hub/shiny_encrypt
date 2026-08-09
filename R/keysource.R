@@ -7,7 +7,7 @@
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
 KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc",
-                 "shamir", "timelock", "cpabe", "ibe")
+                 "shamir", "timelock", "cpabe", "ibe", "oprf")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -111,6 +111,19 @@ resolve_key <- function(spec) {
                               identity = trimws(identity),
                               ct = raw_to_base64(enc$ct)),
            key_export = NULL)   # recipient decrypts with their extracted identity key
+    },
+    "oprf" = {
+      text <- spec$text %||% ""
+      if (!nzchar(text))
+        stop("OPRF: enter an input to harden (a passphrase, id, or secret).")
+      okey <- as_raw(spec$oprf_key %||%
+                       stop("OPRF: generate or upload a 32-byte OPRF key first."))
+      der <- oprf_derive_key(text, okey)   # key = VOPRF_k(input); needs the OPRF key too
+      list(key = der$key, salt = NULL,
+           source_meta = list(type = "oprf", alg = "voprf-ristretto255-sha512",
+                              public_key = sodium::bin2hex(der$public_key)),
+           key_export = NULL,          # the input is user-remembered, never stored
+           oprf_key = okey)            # offered for download as the .oprfkey (SECRET)
     }
   )
 }
@@ -160,6 +173,18 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       ct <- base64_to_raw(source_meta$ct %||%
                             stop("Artifact is missing its IBE ciphertext."))
       native_ibe_decaps(as_raw(secret), ct)
+    },
+    "oprf" = {
+      # `secret` is list(text, oprf_key): both the exact input and the OPRF key
+      # are required to reproduce the derived key.
+      if (!is.list(secret) || is.null(secret$text) || is.null(secret$oprf_key))
+        stop("OPRF: decryption needs both the input text and the OPRF key file.")
+      der  <- oprf_derive_key(secret$text, secret$oprf_key)
+      want <- source_meta$public_key
+      if (!is.null(want) &&
+          !identical(tolower(want), tolower(sodium::bin2hex(der$public_key))))
+        stop("OPRF: that OPRF key does not match the one this file was hardened with.")
+      der$key   # wrong input still fails closed on the AEAD tag
     },
     stop(sprintf("Unknown key source: %s", type))
   )

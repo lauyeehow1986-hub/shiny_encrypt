@@ -43,3 +43,7 @@ serde_json = "1.0"
 # Identity-Based Encryption (Kiltz-Vahlis IBE1, IND-CCA2 IBKEM). Pure Rust:
 # BLS12-381 pairing + keccak, no C deps. Keys/ct are fixed-size compressed arrays.
 ibe = { version = "0.3", features = ["kv1"] }
+# Verifiable Oblivious PRF (RFC 9497-style, ristretto255 + SHA-512). Pure Rust,
+# BSD-3-Clause (license-clean for the MIT core); already in the build graph via
+# x25519-dalek, so it adds no heavy compile.
+curve25519-dalek = "4"

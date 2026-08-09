@@ -60,6 +60,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_timelock_generate")) caps <- c(caps, "tlock")
     if (has("wrap__native_cpabe_setup"))   caps <- c(caps, "cp-abe")
     if (has("wrap__native_ibe_setup"))     caps <- c(caps, "ibe")
+    if (has("wrap__native_oprf_keygen"))   caps <- c(caps, "oprf")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -247,6 +248,45 @@ native_ibe_encaps <- function(pk, identity) {
 native_ibe_decaps <- function(usk, ct) {
   .require_native()
   .Call("wrap__native_ibe_decaps", as_raw(usk), as_raw(ct))
+}
+
+# ---- OPRF (verifiable oblivious PRF, ristretto255 + SHA-512) ---------------
+# A VOPRF computes F_k(input) so that the key holder never sees `input` and the
+# client never learns k; the output is pseudorandom in (input, k). Used here to
+# harden a low-entropy input with a separately-held OPRF key (see R/oprf.R).
+
+# 32-byte OPRF secret key (a ristretto255 scalar).
+native_oprf_keygen <- function() {
+  .require_native()
+  .Call("wrap__native_oprf_keygen")
+}
+
+# Public verification key k*G (32 bytes) for an OPRF secret key.
+native_oprf_public_key <- function(key) {
+  .require_native()
+  .Call("wrap__native_oprf_public_key", as_raw(key))
+}
+
+# Client blind step: returns blind_scalar(32) || blinded_element(32). The blinded
+# element hides `input` (raw) from the OPRF key holder.
+native_oprf_blind <- function(input) {
+  .require_native()
+  .Call("wrap__native_oprf_blind", as_raw(input))
+}
+
+# Server evaluate step: E = k*B plus a DLEQ proof. Returns evaluated(32) ||
+# dleq_c(32) || dleq_z(32). The key holder sees only the blinded element.
+native_oprf_evaluate <- function(key, blinded) {
+  .require_native()
+  .Call("wrap__native_oprf_evaluate", as_raw(key), as_raw(blinded))
+}
+
+# Client finalize: verify the DLEQ proof (fails closed), unblind, and return the
+# 64-byte PRF output. Deterministic in (input, key) despite the random blind.
+native_oprf_finalize <- function(input, blind_bundle, evaluated, pubkey) {
+  .require_native()
+  .Call("wrap__native_oprf_finalize", as_raw(input), as_raw(blind_bundle),
+        as_raw(evaluated), as_raw(pubkey))
 }
 
 native_backends_status <- function() {
