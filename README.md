@@ -26,7 +26,8 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **FF1 format-preserving** column de-identification | ✅ working when native backend built |
 | **Time-lock** key source (RSW sequential-squaring puzzle) | ✅ working when native backend built |
 | **CP-ABE** attribute-policy key source (BSW) | ✅ working when native backend built |
-| IBE, PRE | ⛏ native crate (Phase 5) |
+| **IBE** identity key source (Kiltz-Vahlis IBE1) | ✅ working when native backend built |
+| PRE | ⛏ native crate (Phase 5) |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
@@ -76,6 +77,8 @@ Once the native backend is built and staged (`tools/build_native.R` → `inst/li
 - **Time-lock key source** — an **RSW sequential-squaring puzzle** (Rivest–Shamir–Wagner) that seals a fresh random data key behind a chosen delay. Offered as the **Time-lock** key source on the Encrypt tab: pick a delay (seconds → days), the app calibrates this machine's squaring rate and sizes the puzzle. It is fully **offline** and self-contained — no key file is produced, and the RSA trapdoor is destroyed at seal time, so **time itself is the key**. To decrypt, the Decrypt tab recomputes the answer by *T* sequential modular squarings, showing a live progress bar. The delay is **approximate**: it cannot be parallelised away (each squaring depends on the last), but a faster single core solves sooner. An optional creator **master key** (the puzzle solution) can be kept to skip the wait; leaving it off is a true time-lock.
 
 - **CP-ABE attribute-policy key source** — **ciphertext-policy attribute-based encryption** (Bethencourt–Sahai–Waters, via the `rabe` crate) seals the data key under a boolean **policy** over attributes, e.g. `"cardiology" and ("senior" or "admin")`. Offered as the **Attribute policy (CP-ABE)** key source on the Encrypt tab: generate (or upload) an **authority** — a public key that encrypts under a policy and a SECRET **master** that issues per-recipient **attribute keys**. A ciphertext opens for any attribute key whose set **satisfies** the policy — role-based access without a per-recipient key exchange or an online server. Non-satisfying keys **fail closed** (they error, and the sealed key is AEAD-protected inside the ABE ciphertext as well). This is access *control*, not multi-authority trust: whoever holds the master can mint any attribute key, so guard it like a CA root.
+
+- **IBE identity key source** — **identity-based encryption** (Kiltz–Vahlis IBE1, an IND-CCA2 IBKEM on BLS12-381, via the `ibe` crate) seals the data key straight to an **identity string** — an email, a role, a study id — with no certificate and no prior key exchange. Offered as the **Recipient identity (IBE)** key source on the Encrypt tab: generate (or upload) an **authority** — a public key that encrypts to *any* identity and a SECRET **master** (the Private Key Generator) that **extracts** a per-identity key. Anyone with the public key can seal to `alice@hospital.org`; only the key the authority extracted for that exact identity decapsulates it. Wrong-identity keys **fail closed**. Like CP-ABE this is access *control* with an **escrow root** (the master can mint any identity's key) and **no revocation** — rotate the authority to cut identities off.
 
 Each is capability-gated: the app only shows a feature after probing that the loaded library actually exports it, so an older DLL never advertises something it can't do. Enabling a newly-built feature needs an app restart (the running app locks the staged DLL).
 

@@ -37,6 +37,14 @@ help_html <- function() {
             <code>.master</code> that issues attribute keys), then hand each recipient an attribute
             key. A file opens for any attribute key whose set <b>satisfies</b> the policy; others
             fail closed. The master can mint any key, so guard it like a CA root.</li>
+        <li><b>Recipient identity (IBE)</b> <i>(native)</i>: seals the key straight to an
+            <b>identity string</b> (an email, a role, a study id), e.g.
+            <code>alice@hospital.org</code> — no certificate. Generate an authority (a
+            <code>.pub</code> that encrypts to any identity and a SECRET <code>.master</code> that
+            extracts identity keys), then hand each recipient the key issued for their identity.
+            Only the key for the sealed identity opens the file; others fail closed. Like CP-ABE the
+            master is an escrow root and there is no revocation — rotate the authority to cut an
+            identity off.</li>
       </ul></li>
   <li><b>Pick a scheme &amp; parameters</b> — Core AEAD (XSalsa20-Poly1305 or
       AES-256-GCM) is available now. Leave nonce/IV blank for a fresh random value,
@@ -60,7 +68,7 @@ help_html <- function() {
 <p class="text-muted small">The exported <code>.R</code> is portable: it decrypts Core
 AEAD artifacts with only <code>sodium</code> + <code>openssl</code> installed, and the
 embedded envelope is parsed as data — nothing in the artifact is executed. Artifacts using
-a native key source (Argon2id, PQC hybrid, Shamir, time-lock, CP-ABE) decrypt through the installed
+a native key source (Argon2id, PQC hybrid, Shamir, time-lock, CP-ABE, IBE) decrypt through the installed
 package instead, since they need the Rust backend. The native features appear only when that
 backend is built and staged.</p>
 <h4>De-identify (FPE) — a separate tab</h4>

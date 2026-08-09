@@ -14,7 +14,8 @@ app_server <- function(input, output, session) {
   rv <- shiny::reactiveValues(env = NULL, keyres = NULL, keyfiles = list(),
                               dec_env = NULL, dec_pt = NULL, pqc_keys = NULL,
                               sign_keys = NULL, fpe_out = NULL, fpe_rev = NULL,
-                              cpabe_keys = NULL, cpabe_issued = NULL)
+                              cpabe_keys = NULL, cpabe_issued = NULL,
+                              ibe_keys = NULL, ibe_issued = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -43,6 +44,8 @@ app_server <- function(input, output, session) {
       ksrc <- c(ksrc, "Time-lock (decrypt only after a delay)" = "timelock")
     if (isTRUE(crypto_backend_available("cp-abe")))
       ksrc <- c(ksrc, "Attribute policy (CP-ABE)" = "cpabe")
+    if (isTRUE(crypto_backend_available("ibe")))
+      ksrc <- c(ksrc, "Recipient identity (IBE)" = "ibe")
     shiny::updateSelectInput(session, "keysrc", choices = ksrc,
                              selected = shiny::isolate(input$keysrc))
   })
@@ -124,6 +127,11 @@ app_server <- function(input, output, session) {
         if (!is.null(input$cpabe_pk_up)) read_secret_bytes(input$cpabe_pk_up$datapath)
         else if (!is.null(rv$cpabe_keys)) rv$cpabe_keys$pk
         else stop("Generate a CP-ABE authority or upload its public key (.pub) first.")
+      }),
+      "ibe"           = list(type = "ibe", identity = input$ibe_identity %||% "", pk = {
+        if (!is.null(input$ibe_pk_up)) read_secret_bytes(input$ibe_pk_up$datapath)
+        else if (!is.null(rv$ibe_keys)) rv$ibe_keys$pk
+        else stop("Generate an IBE authority or upload its public key (.pub) first.")
       }))
   }
 
@@ -250,6 +258,74 @@ app_server <- function(input, output, session) {
       paste(rv$cpabe_issued$attrs, collapse = ", "), "\n",
       "# Upload on the Decrypt tab to open files whose policy these attributes satisfy. hex(JSON):\n",
       sodium::bin2hex(as_raw(rv$cpabe_issued$sk)), "\n"), file))
+
+  # ---- IBE authority (Kiltz-Vahlis identity-based encryption) ----
+  shiny::observeEvent(input$gen_ibe, {
+    tryCatch({
+      rv$ibe_keys <- native_ibe_setup()
+      shiny::showNotification(
+        "IBE authority generated. Keep the .master SECRET (it extracts identity keys); share the .pub so others can encrypt to an identity.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("IBE setup failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$ibe_key_status <- shiny::renderUI({
+    if (is.null(rv$ibe_keys)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2",
+      shiny::HTML("Authority ready. The <b>.pub</b> encrypts to any identity; the <b>.master</b> extracts identity keys and is SECRET."),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_ibe_pub", ".pub", class = "btn-outline-primary btn-sm me-2"),
+        shiny::downloadButton("dl_ibe_master", ".master", class = "btn-outline-danger btn-sm")))
+  })
+
+  .ibe_hex_file <- function(bytes, kind)
+    paste0("# shinyEncrypt IBE (Kiltz-Vahlis) authority ", kind, ", hex:\n",
+           sodium::bin2hex(as_raw(bytes)), "\n")
+  output$dl_ibe_pub <- shiny::downloadHandler(
+    filename = function() "ibe_authority.pub",
+    content  = function(file) writeLines(.ibe_hex_file(rv$ibe_keys$pk, "PUBLIC key"), file))
+  output$dl_ibe_master <- shiny::downloadHandler(
+    filename = function() "ibe_authority.master",
+    content  = function(file) writeLines(.ibe_hex_file(rv$ibe_keys$mk, "MASTER key (SECRET)"), file))
+
+  # Extract a per-identity key from the authority master.
+  shiny::observeEvent(input$ibe_issue, {
+    tryCatch({
+      mk <- if (!is.null(input$ibe_master_up)) read_secret_bytes(input$ibe_master_up$datapath)
+            else if (!is.null(rv$ibe_keys)) rv$ibe_keys$mk
+            else stop("Generate an authority or upload its .master to issue keys.")
+      pk <- if (!is.null(input$ibe_pk_up)) read_secret_bytes(input$ibe_pk_up$datapath)
+            else if (!is.null(rv$ibe_keys)) rv$ibe_keys$pk
+            else stop("Also provide the authority .pub (generate or upload it).")
+      identity <- trimws(input$ibe_issue_id %||% "")
+      if (!nzchar(identity)) stop("Enter the identity to issue a key for.")
+      usk <- native_ibe_extract(pk, mk, identity)
+      rv$ibe_issued <- list(usk = usk, identity = identity)
+      shiny::showNotification(
+        sprintf("Issued an identity key for: %s. Download it below (SECRET — give it to that recipient).",
+                identity), type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("Issue failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$ibe_issue_status <- shiny::renderUI({
+    if (is.null(rv$ibe_issued)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2 mt-2",
+      shiny::HTML(sprintf(
+        "Identity key ready for <code>%s</code>. It decrypts only files sealed to that exact identity.",
+        rv$ibe_issued$identity)),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_ibe_attr", "Download identity key", class = "btn-outline-danger btn-sm")))
+  })
+
+  output$dl_ibe_attr <- shiny::downloadHandler(
+    filename = function() sprintf("ibe_idkey_%s.txt",
+      gsub("[^A-Za-z0-9]+", "-", rv$ibe_issued$identity)),
+    content  = function(file) writeLines(paste0(
+      "# shinyEncrypt IBE IDENTITY KEY (SECRET) for: ", rv$ibe_issued$identity, "\n",
+      "# Upload on the Decrypt tab to open files sealed to this identity. hex:\n",
+      sodium::bin2hex(as_raw(rv$ibe_issued$usk)), "\n"), file))
 
   # ---- Envelope signing (ML-DSA-65) ----
   # Only offered when the native backend actually exports the signature symbols.
@@ -398,6 +474,8 @@ app_server <- function(input, output, session) {
                                 .tl_human(env$key_source$target_seconds)),
       "cpabe"         = sprintf("This artifact is CP-ABE encrypted under the policy %s — upload a matching attribute key below.",
                                 env$key_source$policy %||% "(unknown)"),
+      "ibe"           = sprintf("This artifact is IBE-sealed to the identity %s — upload that identity's key below.",
+                                env$key_source$identity %||% "(unknown)"),
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
@@ -444,6 +522,18 @@ app_server <- function(input, output, session) {
       shiny::helpText(class = "small text-muted",
         sprintf("Policy: %s. Your attribute key opens the file only if its attributes satisfy this policy.",
                 env$key_source$policy %||% "(unknown)")))
+  })
+
+  # IBE: upload the recipient's identity key; it opens the file only if it was
+  # extracted for the exact identity the artifact was sealed to.
+  output$dec_ibe_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || !identical(env$key_source$type, "ibe")) return(NULL)
+    shiny::tagList(
+      shiny::fileInput("dec_ibe_key", "IBE identity key (ibe_idkey_*.txt)"),
+      shiny::helpText(class = "small text-muted",
+        sprintf("Identity: %s. Only the key issued for this exact identity opens the file.",
+                env$key_source$identity %||% "(unknown)")))
   })
 
   # Optional signer-key pinning: shown only for signed artifacts. Uploading the
@@ -518,6 +608,10 @@ app_server <- function(input, output, session) {
         if (is.null(input$dec_cpabe_key))
           stop("This artifact needs a CP-ABE attribute key — upload it below.")
         read_secret_bytes(input$dec_cpabe_key$datapath)
+      } else if (t == "ibe") {
+        if (is.null(input$dec_ibe_key))
+          stop("This artifact needs an IBE identity key — upload it below.")
+        read_secret_bytes(input$dec_ibe_key$datapath)
       } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
@@ -709,8 +803,10 @@ app_server <- function(input, output, session) {
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
                "pqc_key_status", "cpabe_key_status", "cpabe_issue_status",
+               "ibe_key_status", "ibe_issue_status",
                "sign_ui", "sign_key_status", "dec_signature", "tl_estimate",
                "dec_signpub_ui", "dec_shares_ui", "dec_timelock_ui", "dec_cpabe_ui",
+               "dec_ibe_ui",
                "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
                "fpe_preview", "scheme_table", "help_md")) {

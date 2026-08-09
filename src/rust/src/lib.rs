@@ -35,6 +35,14 @@ use num_bigint_dig::{BigUint, RandPrime};
 use rabe::schemes::bsw;
 use rabe::utils::policy::pest::PolicyLanguage;
 
+use ibe::kem::kiltz_vahlis_one::{
+    CipherText as IbeCipherText, PublicKey as IbePublicKey, SecretKey as IbeSecretKey,
+    UserSecretKey as IbeUserSecretKey, CT_BYTES as IBE_CT, PK_BYTES as IBE_PK, SK_BYTES as IBE_SK,
+    USK_BYTES as IBE_USK, KV1,
+};
+use ibe::kem::IBKEM;
+use ibe::{Compress, Derive};
+
 // ---- fixed lengths (bytes) --------------------------------------------------
 const X_SK: usize = 32;   // X25519 secret
 const X_PK: usize = 32;   // X25519 public
@@ -525,6 +533,131 @@ fn native_cpabe_decrypt(sk: &[u8], ct: &[u8]) -> std::result::Result<Vec<u8>, St
 }
 
 // ============================================================================
+// Identity-Based Encryption (Kiltz-Vahlis IBE1, IND-CCA2 IBKEM).
+//
+// A dataset key is sealed straight to an IDENTITY STRING (an email, a role name,
+// a study id) with no certificate and no prior key exchange: anyone holding the
+// authority public key can encapsulate to `alice@hospital`. A trusted authority
+// (the Private Key Generator) holds (PK, master SK) and EXTRACTS a per-identity
+// user key from it; only that key decapsulates. As with CP-ABE the master is an
+// escrow root — it can mint any identity's key — and there is no revocation:
+// rotate the authority to cut identities off.
+//
+// FFI: keys and ciphertext cross as the crate's fixed-size compressed byte arrays
+// (opaque to R). setup returns [u32_be pk_len] || pk || msk so R splits the public
+// key (shareable) from the master (secret). encaps returns
+// [u32_be ct_len] || ct || shared_key(32): R stores ct in the envelope and uses
+// the 32-byte shared secret as the AEAD data key. decaps recovers that same key.
+// ============================================================================
+
+type IbeId = <KV1 as IBKEM>::Id;
+
+fn ibe_id(identity: &str) -> std::result::Result<IbeId, String> {
+    let id = identity.trim();
+    if id.is_empty() {
+        return Err("ibe: identity must be a non-empty string".to_string());
+    }
+    Ok(<IbeId as Derive>::derive_str(id))
+}
+
+fn ibe_pk_from(b: &[u8]) -> std::result::Result<IbePublicKey, String> {
+    let arr: [u8; IBE_PK] = b
+        .try_into()
+        .map_err(|_| format!("ibe: public key must be {IBE_PK} bytes"))?;
+    IbePublicKey::from_bytes(&arr)
+        .into_option()
+        .ok_or_else(|| "ibe: invalid public key bytes".to_string())
+}
+
+fn ibe_sk_from(b: &[u8]) -> std::result::Result<IbeSecretKey, String> {
+    let arr: [u8; IBE_SK] = b
+        .try_into()
+        .map_err(|_| format!("ibe: master key must be {IBE_SK} bytes"))?;
+    IbeSecretKey::from_bytes(&arr)
+        .into_option()
+        .ok_or_else(|| "ibe: invalid master key bytes".to_string())
+}
+
+fn ibe_usk_from(b: &[u8]) -> std::result::Result<IbeUserSecretKey, String> {
+    let arr: [u8; IBE_USK] = b
+        .try_into()
+        .map_err(|_| format!("ibe: user key must be {IBE_USK} bytes"))?;
+    IbeUserSecretKey::from_bytes(&arr)
+        .into_option()
+        .ok_or_else(|| "ibe: invalid user key bytes".to_string())
+}
+
+fn ibe_ct_from(b: &[u8]) -> std::result::Result<IbeCipherText, String> {
+    let arr: [u8; IBE_CT] = b
+        .try_into()
+        .map_err(|_| format!("ibe: ciphertext must be {IBE_CT} bytes"))?;
+    IbeCipherText::from_bytes(&arr)
+        .into_option()
+        .ok_or_else(|| "ibe: invalid ciphertext bytes".to_string())
+}
+
+/// IBE (Kiltz-Vahlis) authority setup. Returns [u32_be pk_len] || pk || msk: the
+/// public key (encrypts to any identity) and the master key (extracts identity
+/// keys — SECRET). R splits on pk_len.
+#[extendr]
+fn native_ibe_setup() -> std::result::Result<Vec<u8>, String> {
+    let mut rng = OsRng;
+    let (pk, sk) = KV1::setup(&mut rng);
+    let pk_b = pk.to_bytes();
+    let sk_b = sk.to_bytes();
+    let pk_s: &[u8] = pk_b.as_ref();
+    let sk_s: &[u8] = sk_b.as_ref();
+    let mut out = Vec::with_capacity(4 + pk_s.len() + sk_s.len());
+    out.extend_from_slice(&(pk_s.len() as u32).to_be_bytes());
+    out.extend_from_slice(pk_s);
+    out.extend_from_slice(sk_s);
+    Ok(out)
+}
+
+/// Extract the user secret key for `identity` from the authority (pk, msk).
+/// Returns the fixed-size key bytes (SECRET — give it to that one identity holder).
+#[extendr]
+fn native_ibe_extract(pk: &[u8], sk: &[u8], identity: &str) -> std::result::Result<Vec<u8>, String> {
+    let id = ibe_id(identity)?;
+    let pk = ibe_pk_from(pk)?;
+    let sk = ibe_sk_from(sk)?;
+    let mut rng = OsRng;
+    let usk = KV1::extract_usk(Some(&pk), &sk, &id, &mut rng);
+    let usk_b = usk.to_bytes();
+    let usk_s: &[u8] = usk_b.as_ref();
+    Ok(usk_s.to_vec())
+}
+
+/// Seal to `identity`: encapsulate a fresh 32-byte data key to the identity under
+/// the authority public key. Returns [u32_be ct_len] || ct || shared_key(32); R
+/// stores ct in the envelope and uses the 32-byte key as the AEAD data key.
+#[extendr]
+fn native_ibe_encaps(pk: &[u8], identity: &str) -> std::result::Result<Vec<u8>, String> {
+    let id = ibe_id(identity)?;
+    let pk = ibe_pk_from(pk)?;
+    let mut rng = OsRng;
+    let (ct, ss) = KV1::encaps(&pk, &id, &mut rng);
+    let ct_b = ct.to_bytes();
+    let ct_s: &[u8] = ct_b.as_ref();
+    let mut out = Vec::with_capacity(4 + ct_s.len() + SS);
+    out.extend_from_slice(&(ct_s.len() as u32).to_be_bytes());
+    out.extend_from_slice(ct_s);
+    out.extend_from_slice(&ss.0);
+    Ok(out)
+}
+
+/// Recover the 32-byte data key: decapsulate `ct` with the identity's user key.
+/// Fails closed (errors) if the key was issued for a different identity.
+#[extendr]
+fn native_ibe_decaps(usk: &[u8], ct: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    let usk = ibe_usk_from(usk)?;
+    let ct = ibe_ct_from(ct)?;
+    let ss = KV1::decaps(None, &usk, &ct)
+        .map_err(|e| format!("ibe: decapsulation failed (wrong identity key?): {e:?}"))?;
+    Ok(ss.0.to_vec())
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -552,5 +685,9 @@ extendr_module! {
     fn native_cpabe_keygen;
     fn native_cpabe_encrypt;
     fn native_cpabe_decrypt;
+    fn native_ibe_setup;
+    fn native_ibe_extract;
+    fn native_ibe_encaps;
+    fn native_ibe_decaps;
     fn native_backend_version;
 }

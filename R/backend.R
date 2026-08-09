@@ -58,6 +58,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_ff1_encrypt"))   caps <- c(caps, "fpe-ff1")
     if (has("wrap__native_timelock_generate")) caps <- c(caps, "tlock")
     if (has("wrap__native_cpabe_setup"))   caps <- c(caps, "cp-abe")
+    if (has("wrap__native_ibe_setup"))     caps <- c(caps, "ibe")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -208,6 +209,43 @@ native_cpabe_encrypt <- function(pk, policy, plaintext) {
 native_cpabe_decrypt <- function(sk, ct) {
   .require_native()
   .Call("wrap__native_cpabe_decrypt", as_raw(sk), as_raw(ct))
+}
+
+# ---- IBE (Kiltz-Vahlis identity-based encryption) --------------------------
+# Authority (PKG) setup. Returns list(pk, msk): the public key (encrypts to any
+# identity, shareable) and the master key (extracts per-identity keys — SECRET).
+# Both are opaque fixed-size raw blobs; native packs them as [u32_be pk_len]||pk||msk.
+native_ibe_setup <- function() {
+  .require_native()
+  out <- .Call("wrap__native_ibe_setup")
+  pk_len <- readBin(as.raw(out[1:4]), "integer", n = 1L, size = 4L, endian = "big")
+  list(pk = out[(4L + 1L):(4L + pk_len)],
+       mk = out[(4L + pk_len + 1L):length(out)])
+}
+
+# Extract the user secret key for `identity` from the authority (pk, msk).
+# Returns the key as a raw blob (SECRET, for that one identity holder).
+native_ibe_extract <- function(pk, mk, identity) {
+  .require_native()
+  .Call("wrap__native_ibe_extract", as_raw(pk), as_raw(mk), as.character(identity)[1])
+}
+
+# Seal a fresh 32-byte data key to `identity` under the authority public key.
+# Returns list(ct, key): ct is the raw ciphertext (stored in the envelope), key
+# is the 32-byte data key to use for AEAD. Native packs [u32_be ct_len]||ct||key.
+native_ibe_encaps <- function(pk, identity) {
+  .require_native()
+  out <- .Call("wrap__native_ibe_encaps", as_raw(pk), as.character(identity)[1])
+  ct_len <- readBin(as.raw(out[1:4]), "integer", n = 1L, size = 4L, endian = "big")
+  list(ct = out[(4L + 1L):(4L + ct_len)],
+       key = out[(4L + ct_len + 1L):length(out)])
+}
+
+# Recover the 32-byte data key: decapsulate `ct` with the identity's user key.
+# Errors (fails closed) if the key was issued for a different identity.
+native_ibe_decaps <- function(usk, ct) {
+  .require_native()
+  .Call("wrap__native_ibe_decaps", as_raw(usk), as_raw(ct))
 }
 
 native_backends_status <- function() {

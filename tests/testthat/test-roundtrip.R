@@ -321,6 +321,50 @@ test_that("CP-ABE key source (if built) seals under a policy; attribute keys gat
   expect_error(resolve_key(list(type = "cpabe", pk = auth$pk, policy = "   ")))
 })
 
+test_that("native IBE (if built): the sealed identity's key decrypts, others fail closed", {
+  skip_if_not(crypto_backend_available("ibe"), "native IBE backend not built")
+  auth <- native_ibe_setup()
+  expect_true(length(auth$pk) > 0 && length(auth$mk) > 0)
+
+  enc <- native_ibe_encaps(auth$pk, "alice@hospital.org")   # list(ct, key)
+  expect_equal(length(enc$key), 32L)
+
+  # the key extracted for the sealed identity recovers the exact encapsulated key
+  usk <- native_ibe_extract(auth$pk, auth$mk, "alice@hospital.org")
+  expect_identical(native_ibe_decaps(usk, enc$ct), enc$key)
+
+  # a key for a different identity cannot recover it (explicit or implicit reject)
+  bad <- native_ibe_extract(auth$pk, auth$mk, "eve@hospital.org")
+  got <- tryCatch(native_ibe_decaps(bad, enc$ct), error = function(e) NULL)
+  expect_false(identical(got, enc$key))
+
+  # blank identities are rejected on both seal and extract
+  expect_error(native_ibe_encaps(auth$pk, "   "))
+  expect_error(native_ibe_extract(auth$pk, auth$mk, ""))
+})
+
+test_that("IBE key source (if built) seals to an identity; only that identity's key opens it", {
+  skip_if_not(crypto_backend_available("ibe"), "native IBE backend not built")
+  auth <- native_ibe_setup()
+  kr <- resolve_key(list(type = "ibe", pk = auth$pk, identity = "alice@hospital.org"))
+  expect_identical(kr$source_meta$type, "ibe")
+  expect_identical(kr$source_meta$identity, "alice@hospital.org")
+  expect_null(kr$key_export)                       # no key file — an identity key opens it
+  expect_true(nchar(kr$source_meta$ct) > 0)
+
+  env    <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "ibe.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+
+  # the key issued for the sealed identity decrypts
+  ok <- native_ibe_extract(auth$pk, auth$mk, "alice@hospital.org")
+  expect_identical(se_decrypt(env_rt, ok), payload)
+  # a key for another identity cannot (the AEAD tag rejects the wrong KEM output)
+  no <- native_ibe_extract(auth$pk, auth$mk, "eve@hospital.org")
+  expect_error(se_decrypt(env_rt, no))
+  # a blank identity is rejected at seal time
+  expect_error(resolve_key(list(type = "ibe", pk = auth$pk, identity = "   ")))
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
@@ -338,4 +382,6 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("tlock"))
   expect_equal("cp-abe" %in% s$id[s$available],
                crypto_backend_available("cp-abe"))
+  expect_equal("ibe" %in% s$id[s$available],
+               crypto_backend_available("ibe"))
 })

@@ -7,7 +7,7 @@
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
 KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc",
-                 "shamir", "timelock", "cpabe")
+                 "shamir", "timelock", "cpabe", "ibe")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -98,6 +98,19 @@ resolve_key <- function(spec) {
            source_meta = list(type = "cpabe", alg = "bsw-cpabe",
                               policy = policy, ct = raw_to_base64(ct)),
            key_export = NULL)   # recipients decrypt with an attribute key, not a key file
+    },
+    "ibe" = {
+      pk <- as_raw(spec$pk %||%
+              stop("IBE: generate or upload an authority public key first."))
+      identity <- spec$identity %||% ""
+      if (!nzchar(trimws(identity)))
+        stop("IBE: enter a recipient identity, e.g. alice@hospital.org.")
+      enc <- native_ibe_encaps(pk, identity)   # KEM: seals a fresh data key to the identity
+      list(key = enc$key, salt = NULL,         # the encapsulated 32-byte secret IS the key
+           source_meta = list(type = "ibe", alg = "kv1-ibkem",
+                              identity = trimws(identity),
+                              ct = raw_to_base64(enc$ct)),
+           key_export = NULL)   # recipient decrypts with their extracted identity key
     }
   )
 }
@@ -140,6 +153,13 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       ct <- base64_to_raw(source_meta$ct %||%
                             stop("Artifact is missing its CP-ABE ciphertext."))
       native_cpabe_decrypt(as_raw(secret), ct)
+    },
+    "ibe" = {
+      # `secret` is the recipient's extracted identity key; native decaps returns
+      # the data key only if the key matches the sealed identity, else errors.
+      ct <- base64_to_raw(source_meta$ct %||%
+                            stop("Artifact is missing its IBE ciphertext."))
+      native_ibe_decaps(as_raw(secret), ct)
     },
     stop(sprintf("Unknown key source: %s", type))
   )

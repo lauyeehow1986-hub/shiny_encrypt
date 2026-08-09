@@ -43,8 +43,9 @@ register_all_schemes <- function() {
     "Policy-based access control — offered as the 'Attribute policy (CP-ABE)' KEY SOURCE on the Encrypt tab; seal a key under a boolean policy, issue attribute keys from the authority master, and any key whose attributes satisfy the policy decrypts.",
     cap("cp-abe"))
   .register_scheme_placeholder("ibe", "Native",
-    "Identity-Based Encryption", "the native pairing crate",
-    "Encrypt to an identity string. Build the native package to enable.", cap("ibe"))
+    "Identity-Based Encryption (Kiltz-Vahlis IBE1)", "the native ibe crate",
+    "Encrypt straight to an identity string — offered as the 'Recipient identity (IBE)' KEY SOURCE on the Encrypt tab; seal a key to an identity under the authority public key, extract that identity's key from the master, and only that key decrypts. No certificate or prior key exchange.",
+    cap("ibe"))
   .register_scheme_placeholder("fpe-ff1", "Native",
     "Format-Preserving Encryption (FF1)", "the native fpe crate",
     "Column-level de-identification that keeps each field's length and character class — use the 'De-identify (FPE)' tab to tokenise ID columns and reverse them with the .fpekit.",

@@ -29,6 +29,12 @@
      **attribute keys**. Anyone whose attribute key *satisfies* the policy can decrypt; others fail
      closed. Role-based access with no per-recipient key exchange — but the master mints any key, so
      guard it like a CA root.
+   - **Recipient identity (IBE)** *(native)*: a fresh key is sealed straight to an **identity
+     string** — `alice@hospital.org`, a role, a study id — with no certificate. Generate (or upload)
+     an **authority**: a `.pub` that encrypts to *any* identity and a SECRET `.master` (the Private
+     Key Generator) that **extracts** a per-identity key. Only the key issued for that exact identity
+     decrypts; others fail closed. Like CP-ABE the master is an escrow root and there is no
+     revocation — rotate the authority to cut identities off.
 4. **Pick a scheme & parameters** — Core AEAD (**XSalsa20-Poly1305** or **AES-256-GCM**) works
    now. Leave nonce/IV blank for a fresh random value, or set it (hex) for reproducible output.
    Optionally tick **Sign this envelope (ML-DSA-65)** *(native)* to attach a post-quantum signature;
@@ -40,7 +46,8 @@
 7. **Decrypt (reverse tab)** — upload a `.txt` or `.R` artifact, supply the matching
    passphrase / free-text / key file / **PQC secret** / **any t Shamir shares** / **solved
    time-lock** (the tab solves the puzzle for you, with a progress bar, or takes the creator's
-   master key) / **CP-ABE attribute key** (decrypts only if its attributes satisfy the policy),
+   master key) / **CP-ABE attribute key** (decrypts only if its attributes satisfy the policy) /
+   **IBE identity key** (decrypts only if issued for the sealed identity),
    and decrypt. The integrity digest is verified, then you can download the original
    binary (or re-materialize CSV/XLSX). Any signature is verified automatically; paste an
    **expected signer** key/fingerprint to *pin* who signed it (green = authenticated, amber =
@@ -76,12 +83,12 @@ their format.
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
   `openssl` installed, and the embedded envelope is parsed as **data** — nothing in the
   uploaded artifact is executed. Artifacts that use a **native** key source (Argon2id, PQC
-  hybrid, Shamir, time-lock, CP-ABE) decrypt through the installed package instead, since they need
-  the Rust backend.
+  hybrid, Shamir, time-lock, CP-ABE, IBE) decrypt through the installed package instead, since they
+  need the Rust backend.
 - Every envelope is **versioned** and self-describing (scheme, params, salt, key-source
   description, integrity digest), so it stays decryptable as defaults evolve.
 - The **native** features (Argon2id, PQC hybrid KEM, ML-DSA signing, Shamir custody, time-lock,
-  CP-ABE) appear only when the Rust backend is built and staged; the app probes the loaded library at
+  CP-ABE, IBE) appear only when the Rust backend is built and staged; the app probes the loaded library at
   startup and offers just what it can run. A pinned signature only *authenticates* a signer if you
   compare the fingerprint out-of-band — a valid-but-unpinned signature proves integrity, not identity.
 - The **time-lock** delay is a compute cost, not a wall-clock guarantee: it depends on the solver's
@@ -96,4 +103,8 @@ their format.
   spelling-sensitive), and the policy is stored in the envelope in clear (it describes *who* may
   decrypt, not a secret). Revocation is not built in: to cut off a holder you must re-key and
   re-encrypt under a fresh authority.
+- **IBE** shares CP-ABE's trust shape: the authority master is a Private Key Generator that can
+  extract — and therefore decrypt as — *any* identity, so it is an escrow root; guard the `.master`
+  the same way. The identity is stored in the envelope in clear (it names *who* may decrypt), matched
+  exactly, and there is no revocation — rotate the authority to cut an identity off.
 - **Not for diagnosis or clinical decision-making.** You are responsible for key custody.

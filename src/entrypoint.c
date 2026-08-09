@@ -28,6 +28,10 @@ extern SEXP wrap__native_cpabe_setup(void);
 extern SEXP wrap__native_cpabe_keygen(SEXP pk, SEXP mk, SEXP attrs);
 extern SEXP wrap__native_cpabe_encrypt(SEXP pk, SEXP policy, SEXP plaintext);
 extern SEXP wrap__native_cpabe_decrypt(SEXP sk, SEXP ct);
+extern SEXP wrap__native_ibe_setup(void);
+extern SEXP wrap__native_ibe_extract(SEXP pk, SEXP sk, SEXP identity);
+extern SEXP wrap__native_ibe_encaps(SEXP pk, SEXP identity);
+extern SEXP wrap__native_ibe_decaps(SEXP usk, SEXP ct);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -49,6 +53,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_cpabe_keygen",    (DL_FUNC) &wrap__native_cpabe_keygen,    3},
     {"wrap__native_cpabe_encrypt",   (DL_FUNC) &wrap__native_cpabe_encrypt,   3},
     {"wrap__native_cpabe_decrypt",   (DL_FUNC) &wrap__native_cpabe_decrypt,   2},
+    {"wrap__native_ibe_setup",       (DL_FUNC) &wrap__native_ibe_setup,       0},
+    {"wrap__native_ibe_extract",     (DL_FUNC) &wrap__native_ibe_extract,     3},
+    {"wrap__native_ibe_encaps",      (DL_FUNC) &wrap__native_ibe_encaps,      2},
+    {"wrap__native_ibe_decaps",      (DL_FUNC) &wrap__native_ibe_decaps,      2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };
