@@ -52,8 +52,9 @@ register_all_schemes <- function() {
     "Proxy Re-Encryption", "the native recrypt crate",
     "Re-share ciphertext to another key. Build the native package to enable.", cap("pre"))
   .register_scheme_placeholder("tlock", "Native",
-    "Time-Lock Encryption (VDF / drand tlock)", "the native time-lock crate",
-    "Decrypt only after time T. Build the native package to enable.", cap("tlock"))
+    "Time-Lock Encryption (RSW sequential-squaring puzzle)", "the native time-lock crate",
+    "Decrypt only after a delay — offered as the 'Time-lock' KEY SOURCE on the Encrypt tab; the Decrypt tab solves the puzzle (or takes the creator's master key).",
+    cap("tlock"))
   .register_scheme_placeholder("shamir", "Native",
     "Shamir secret sharing of the data key (t-of-n)", "the native sharks crate",
     "Split the key across custodians — offered as the 'Random key, split into Shamir shares' KEY SOURCE on the Encrypt tab; upload any t shares to decrypt.",

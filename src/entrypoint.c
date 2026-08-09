@@ -21,6 +21,9 @@ extern SEXP wrap__native_shamir_split(SEXP secret, SEXP t, SEXP n);
 extern SEXP wrap__native_shamir_combine(SEXP shares_concat, SEXP share_len);
 extern SEXP wrap__native_ff1_encrypt(SEXP key, SEXP tweak, SEXP radix, SEXP numerals);
 extern SEXP wrap__native_ff1_decrypt(SEXP key, SEXP tweak, SEXP radix, SEXP numerals);
+extern SEXP wrap__native_timelock_generate(SEXP bits, SEXP t);
+extern SEXP wrap__native_timelock_solve_steps(SEXP x, SEXP n, SEXP steps);
+extern SEXP wrap__native_timelock_calibrate(SEXP bits, SEXP millis);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -35,6 +38,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_shamir_combine",  (DL_FUNC) &wrap__native_shamir_combine,  2},
     {"wrap__native_ff1_encrypt",     (DL_FUNC) &wrap__native_ff1_encrypt,     4},
     {"wrap__native_ff1_decrypt",     (DL_FUNC) &wrap__native_ff1_decrypt,     4},
+    {"wrap__native_timelock_generate",    (DL_FUNC) &wrap__native_timelock_generate,    2},
+    {"wrap__native_timelock_solve_steps", (DL_FUNC) &wrap__native_timelock_solve_steps, 3},
+    {"wrap__native_timelock_calibrate",   (DL_FUNC) &wrap__native_timelock_calibrate,   2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

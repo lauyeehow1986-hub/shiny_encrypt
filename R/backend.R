@@ -56,6 +56,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_mldsa_keygen"))  caps <- c(caps, "ml-dsa")
     if (has("wrap__native_shamir_split"))  caps <- c(caps, "shamir")
     if (has("wrap__native_ff1_encrypt"))   caps <- c(caps, "fpe-ff1")
+    if (has("wrap__native_timelock_generate")) caps <- c(caps, "tlock")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -150,6 +151,29 @@ native_shamir_split <- function(secret, t, n) {
 native_shamir_combine <- function(shares_concat, share_len) {
   .require_native()
   .Call("wrap__native_shamir_combine", as_raw(shares_concat), as.integer(share_len))
+}
+
+# ---- Time-lock puzzle (RSW sequential squaring) ----------------------------
+# Generate a puzzle for `t` squarings at an `bits`-bit modulus. Returns
+# list(N, b): the modulus and the trapdoor-computed solution, each bits/8 raw
+# bytes. Discard `b` unless keeping a creator master key.
+native_timelock_generate <- function(bits, t) {
+  .require_native()
+  bits <- as.integer(bits); L <- bits %/% 8L
+  out <- .Call("wrap__native_timelock_generate", bits, as.numeric(t))
+  list(N = out[seq_len(L)], b = out[(L + 1L):(2L * L)])
+}
+
+# One chunk of the sequential solve: returns x^(2^steps) mod N (raw, length |N|).
+native_timelock_solve_steps <- function(x, N, steps) {
+  .require_native()
+  .Call("wrap__native_timelock_solve_steps", as_raw(x), as_raw(N), as.integer(steps))
+}
+
+# Estimate this machine's sequential-squaring rate (squarings/second).
+native_timelock_calibrate <- function(bits = 2048L, millis = 300L) {
+  .require_native()
+  .Call("wrap__native_timelock_calibrate", as.integer(bits), as.integer(millis))
 }
 
 native_backends_status <- function() {

@@ -33,3 +33,6 @@ sharks = "0.5"
 # Format-preserving encryption (FF1, NIST SP 800-38G) + its AES block cipher.
 fpe = "0.6"
 aes = "0.8"
+# Time-lock puzzle (RSW sequential squaring): big integers + prime generation.
+num-bigint-dig = { version = "0.8", features = ["prime", "rand"] }
+rand = "0.8"

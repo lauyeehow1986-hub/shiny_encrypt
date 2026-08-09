@@ -30,6 +30,8 @@ use sharks::{Share, Sharks};
 use aes::Aes256;
 use fpe::ff1::{FlexibleNumeralString, FF1};
 
+use num_bigint_dig::{BigUint, RandPrime};
+
 // ---- fixed lengths (bytes) --------------------------------------------------
 const X_SK: usize = 32;   // X25519 secret
 const X_PK: usize = 32;   // X25519 public
@@ -324,6 +326,120 @@ fn native_ff1_decrypt(
 }
 
 // ============================================================================
+// Time-lock encryption (RSW sequential-squaring puzzle, Rivest-Shamir-Wagner).
+//
+// Seal (trapdoor fast-path): pick an RSA modulus N = p*q, base a = 2, and a
+// squaring count T. Knowing phi(N), the solution b = a^(2^T) mod N is computed
+// instantly via e = 2^T mod phi(N), b = a^e mod N. The caller derives a mask
+// from b, XOR-wraps the data key, then DISCARDS p, q, phi (and b too, unless it
+// keeps a creator master) — so no shortcut survives.
+//
+// Solve (no trapdoor): recompute b by T sequential modular squarings. Each
+// squaring depends on the last, so the work cannot be parallelised; wall-clock
+// is bounded by the solver's single-core speed. Security rests on factoring N
+// being hard AND on there being no squaring shortcut without phi(N).
+//
+// FFI: N and b cross as fixed |N| = bits/8 big-endian byte blobs. The solve is
+// exposed in chunks so R can drive a progress bar over a deliberately-slow run.
+// ============================================================================
+
+fn tl_pad_be(v: Vec<u8>, len: usize) -> Vec<u8> {
+    if v.len() >= len {
+        return v;
+    }
+    let mut out = vec![0u8; len - v.len()];
+    out.extend_from_slice(&v);
+    out
+}
+
+/// Generate a time-lock puzzle for `t` squarings at an `bits`-bit modulus.
+/// Returns N || b, each bits/8 bytes (big-endian). `b` is the trapdoor-computed
+/// solution; discard it unless keeping a creator master key.
+#[extendr]
+fn native_timelock_generate(bits: i32, t: f64) -> std::result::Result<Vec<u8>, String> {
+    if !(1024..=4096).contains(&bits) || bits % 8 != 0 {
+        return Err(format!(
+            "timelock: bits must be in 1024..=4096 and a multiple of 8 (got {bits})"
+        ));
+    }
+    if !t.is_finite() || t < 1.0 || t > 9.0e15 {
+        return Err(format!(
+            "timelock: t (squarings) must be a positive integer below 9e15 (got {t})"
+        ));
+    }
+    let bits = bits as usize;
+    let t_u = t as u64;
+    let mut rng = rand::thread_rng();
+    let half = bits / 2;
+    let p = rng.gen_prime(half);
+    let mut q = rng.gen_prime(half);
+    while q == p {
+        q = rng.gen_prime(half);
+    }
+    let n = &p * &q;
+    let one = BigUint::from(1u32);
+    let phi = (&p - &one) * (&q - &one);
+    let two = BigUint::from(2u32);
+    // e = 2^T mod phi(N); then b = 2^e mod N == 2^(2^T) mod N (trapdoor path).
+    let e = two.modpow(&BigUint::from(t_u), &phi);
+    let b = two.modpow(&e, &n);
+    let l = bits / 8;
+    let mut out = tl_pad_be(n.to_bytes_be(), l);
+    out.extend_from_slice(&tl_pad_be(b.to_bytes_be(), l));
+    Ok(out)
+}
+
+/// One chunk of the sequential solve: returns x^(2^steps) mod N as |N| bytes.
+/// R starts from x = 2 and loops this until `steps` sum to T, carrying x across.
+#[extendr]
+fn native_timelock_solve_steps(x: &[u8], n: &[u8], steps: i32) -> std::result::Result<Vec<u8>, String> {
+    if steps < 1 {
+        return Err(format!("timelock: steps must be >= 1 (got {steps})"));
+    }
+    if n.is_empty() {
+        return Err("timelock: empty modulus".to_string());
+    }
+    let modulus = BigUint::from_bytes_be(n);
+    if modulus < BigUint::from(2u32) {
+        return Err("timelock: modulus too small".to_string());
+    }
+    let mut cur = BigUint::from_bytes_be(x) % &modulus;
+    for _ in 0..steps {
+        cur = (&cur * &cur) % &modulus;
+    }
+    Ok(tl_pad_be(cur.to_bytes_be(), n.len()))
+}
+
+/// Estimate this machine's sequential-squaring rate (squarings/second) at the
+/// given modulus size, so R can translate a target delay into a count T.
+#[extendr]
+fn native_timelock_calibrate(bits: i32, millis: i32) -> std::result::Result<f64, String> {
+    if !(512..=8192).contains(&bits) {
+        return Err(format!("timelock: calibrate bits out of range (got {bits})"));
+    }
+    let millis = millis.clamp(20, 5000) as u128;
+    let bits = bits as usize;
+    let mut rng = rand::thread_rng();
+    let half = bits / 2;
+    let n = &rng.gen_prime(half) * &rng.gen_prime(half);
+    let mut cur = BigUint::from(2u32);
+    let batch = 256u64;
+    let mut count: u64 = 0;
+    let start = std::time::Instant::now();
+    loop {
+        for _ in 0..batch {
+            cur = (&cur * &cur) % &n;
+        }
+        count += batch;
+        if start.elapsed().as_millis() >= millis {
+            break;
+        }
+    }
+    let secs = start.elapsed().as_secs_f64().max(1e-6);
+    Ok(count as f64 / secs)
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -344,5 +460,8 @@ extendr_module! {
     fn native_shamir_combine;
     fn native_ff1_encrypt;
     fn native_ff1_decrypt;
+    fn native_timelock_generate;
+    fn native_timelock_solve_steps;
+    fn native_timelock_calibrate;
     fn native_backend_version;
 }

@@ -24,12 +24,13 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **ML-DSA-65 envelope signing** (+ signer pinning on decrypt) | ✅ working when native backend built |
 | **Shamir t-of-n** key custody | ✅ working when native backend built |
 | **FF1 format-preserving** column de-identification | ✅ working when native backend built |
-| CP-ABE, PRE, time-lock | ⛏ native crate (Phase 5) |
+| **Time-lock** key source (RSW sequential-squaring puzzle) | ✅ working when native backend built |
+| CP-ABE, PRE | ⛏ native crate (Phase 5) |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
 The full catalogue (with per-session availability) is shown on the app's **Schemes** tab. The
-four native features above light up automatically once `src/rust` is built and staged — the app
+native features above light up automatically once `src/rust` is built and staged — the app
 probes the loaded library at startup and only offers what it can actually run.
 
 ## Prerequisites
@@ -62,7 +63,7 @@ The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `so
 
 ## Native crypto features (Phase 4)
 
-Once the native backend is built and staged (`tools/build_native.R` → `inst/libs/x64/shinyencrypt_native.dll`), four additional capabilities appear:
+Once the native backend is built and staged (`tools/build_native.R` → `inst/libs/x64/shinyencrypt_native.dll`), several additional capabilities appear:
 
 - **Argon2id KDF** — memory-hard passphrase hardening at OWASP costs (m=19456 KiB, t=2, p=1), stored in the envelope so the key re-derives on decrypt. Selected under the Passphrase key source when available. (This machine's libsodium Argon2 is broken; the native backend is the only Argon2id path here — scrypt remains the pure-R default.)
 - **Hybrid PQC key source** — an **X25519 + ML-KEM-768** KEM. Generate a keypair in-app, hand out the `.pub`, and encrypt to it; the encapsulation rides in the envelope and only the matching `.secret` bundle decapsulates the data key. Classical **and** post-quantum security — an attacker must break *both* X25519 and ML-KEM.
@@ -70,6 +71,8 @@ Once the native backend is built and staged (`tools/build_native.R` → `inst/li
 - **Shamir t-of-n custody** — split a fresh random data key across `n` custodians (GF(256) secret sharing). The key itself is never written; you get `n` `share_k_of_n.txt` files. Any **t** reconstruct it; any **t-1** reveal nothing (information-theoretic). Decrypt takes any t shares via a multi-file upload; too few is blocked, and even a bypass fails closed on the AEAD tag.
 
 - **FF1 format-preserving de-identification** — a separate **De-identify (FPE)** tab (not the envelope flow). FF1 (NIST SP 800-38G) tokenises chosen table columns while keeping each field's **exact length and character class** — `0012345` → `0847213`, `AB-1234-CD` → `ZK-8071-MR` (delimiters pass through in place). It's deterministic, so equal values map to equal tokens and joins survive; alphabets are auto-detected per column (radix 10/36/62) and overridable. Output is a de-identified CSV plus a secret `.fpekit` (key + recipe) that reverses it exactly. Deterministic FPE is **pseudonymisation, not anonymisation** — it hides identifier content but preserves value frequencies and linkage; the tab states this plainly.
+
+- **Time-lock key source** — an **RSW sequential-squaring puzzle** (Rivest–Shamir–Wagner) that seals a fresh random data key behind a chosen delay. Offered as the **Time-lock** key source on the Encrypt tab: pick a delay (seconds → days), the app calibrates this machine's squaring rate and sizes the puzzle. It is fully **offline** and self-contained — no key file is produced, and the RSA trapdoor is destroyed at seal time, so **time itself is the key**. To decrypt, the Decrypt tab recomputes the answer by *T* sequential modular squarings, showing a live progress bar. The delay is **approximate**: it cannot be parallelised away (each squaring depends on the last), but a faster single core solves sooner. An optional creator **master key** (the puzzle solution) can be kept to skip the wait; leaving it off is a true time-lock.
 
 Each is capability-gated: the app only shows a feature after probing that the loaded library actually exports it, so an older DLL never advertises something it can't do. Enabling a newly-built feature needs an app restart (the running app locks the staged DLL).
 

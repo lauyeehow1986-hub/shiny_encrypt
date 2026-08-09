@@ -7,7 +7,7 @@
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
 KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc",
-                 "shamir")
+                 "shamir", "timelock")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -67,6 +67,24 @@ resolve_key <- function(spec) {
                               share_len = length(shares[[1]])),
            key_export = NULL,          # the key itself is never stored — only shares
            shares = shares)            # downloaded as t-of-n custodian files
+    },
+    "timelock" = {
+      key  <- as.raw(spec$key %||% sodium::random(32L))
+      bits <- as.integer(spec$bits %||% 2048L)
+      t    <- as.numeric(spec$t_squarings %||%
+                stop("Time-lock: internal error — missing squaring count."))
+      puz  <- native_timelock_generate(bits, t)   # list(N, b); b is the solution
+      masked <- .tl_xor(key, timelock_mask(puz$b))
+      list(key = key, salt = NULL,
+           source_meta = list(type = "timelock", alg = "rsw-puzzle-v1",
+                              a = TIMELOCK_BASE, bits = bits, t_squarings = t,
+                              modulus = raw_to_base64(puz$N),
+                              masked_key = raw_to_base64(masked),
+                              rate_est = spec$rate_est %||% NA,
+                              target_seconds = spec$target_seconds %||% NA),
+           key_export = NULL,          # no key file — solving the puzzle IS the key
+           # trapdoor destroyed here; keep b only if the creator wants an instant unlock
+           timelock_master = if (isTRUE(spec$keep_master)) puz$b else NULL)
     }
   )
 }
@@ -95,6 +113,13 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       sl <- as.integer(source_meta$share_len %||%
                          stop("Artifact is missing its Shamir share length."))
       native_shamir_combine(as_raw(secret), sl)      # secret = concatenated shares
+    },
+    "timelock" = {
+      # `secret` is the solved puzzle answer b (from timelock_solve) or the
+      # creator's uploaded master. The slow squaring happens in the server layer.
+      masked <- base64_to_raw(source_meta$masked_key %||%
+                               stop("Artifact is missing its time-lock masked key."))
+      .tl_xor(masked, timelock_mask(as_raw(secret)))
     },
     stop(sprintf("Unknown key source: %s", type))
   )

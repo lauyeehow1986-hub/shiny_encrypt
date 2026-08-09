@@ -25,6 +25,12 @@ help_html <- function() {
         <li><b>Random key split into Shamir shares (t-of-n)</b> <i>(native)</i>: the key
             is split across <i>n</i> custodians and never stored; any <i>t</i> of the
             <code>share_k_of_n.txt</code> files rebuild it.</li>
+        <li><b>Time-lock (decrypt only after a delay)</b> <i>(native)</i>: a fresh key is
+            sealed behind a sequential-squaring puzzle. Pick a delay; no key file is
+            produced, so <b>time itself is the key</b>. Decrypting recomputes the answer
+            through millions of sequential squarings (a progress bar counts them down),
+            and cannot be sped up by adding cores. Optionally keep a creator master key
+            to skip the wait.</li>
       </ul></li>
   <li><b>Pick a scheme &amp; parameters</b> — Core AEAD (XSalsa20-Poly1305 or
       AES-256-GCM) is available now. Leave nonce/IV blank for a fresh random value,
@@ -48,9 +54,9 @@ help_html <- function() {
 <p class="text-muted small">The exported <code>.R</code> is portable: it decrypts Core
 AEAD artifacts with only <code>sodium</code> + <code>openssl</code> installed, and the
 embedded envelope is parsed as data — nothing in the artifact is executed. Artifacts using
-a native key source (Argon2id, PQC hybrid, Shamir) decrypt through the installed package
-instead, since they need the Rust backend. The native features appear only when that backend
-is built and staged.</p>
+a native key source (Argon2id, PQC hybrid, Shamir, time-lock) decrypt through the installed
+package instead, since they need the Rust backend. The native features appear only when that
+backend is built and staged.</p>
 <h4>De-identify (FPE) — a separate tab</h4>
 <p>Format-preserving encryption tokenises identifier <b>columns</b> of a table while
 keeping their format — it is its own tab, not part of the encrypt/decrypt flow (native

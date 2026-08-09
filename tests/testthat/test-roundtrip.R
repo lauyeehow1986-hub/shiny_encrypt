@@ -223,6 +223,58 @@ test_that("FF1 column/table de-identification (if built) preserves format and re
   expect_identical(as.character(fpe_reverse_table(res$df, kit)$code), df$code)
 })
 
+test_that("native time-lock (if built): trapdoor fast-path equals the sequential solve", {
+  skip_if_not(crypto_backend_available("tlock"), "native time-lock backend not built")
+  t <- 20000
+  puz <- native_timelock_generate(1024L, t)
+  expect_length(puz$N, 128L); expect_length(puz$b, 128L)   # 1024-bit modulus = 128 bytes
+  # solving from x = 2 for t squarings reproduces the trapdoor-computed solution,
+  # independent of the chunk size used to walk there
+  expect_identical(timelock_solve(puz$N, t, chunk = 5000), puz$b)
+  expect_identical(timelock_solve(puz$N, t, chunk = 1234), puz$b)
+  # calibration returns a positive rate; degenerate params are rejected
+  expect_true(is.finite(native_timelock_calibrate(1024L, 50L)))
+  expect_true(native_timelock_calibrate(1024L, 50L) > 0)
+  expect_error(native_timelock_generate(1024L, 0))            # t must be >= 1
+  expect_error(native_timelock_solve_steps(puz$b, puz$N, 0L)) # steps must be >= 1
+})
+
+test_that("time-lock key source (if built) seals a key that the solved puzzle recovers", {
+  skip_if_not(crypto_backend_available("tlock"), "native time-lock backend not built")
+  kr <- resolve_key(list(type = "timelock", bits = 1024L, t_squarings = 20000,
+                         target_seconds = 1, rate_est = 20000, keep_master = TRUE))
+  expect_identical(kr$source_meta$type, "timelock")
+  expect_null(kr$key_export)                       # no key file — time is the key
+  expect_length(kr$timelock_master, 128L)          # creator kept the solution b
+  expect_true(nchar(kr$source_meta$modulus) > 0 && nchar(kr$source_meta$masked_key) > 0)
+
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "tl.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+
+  # solve the puzzle straight from the envelope, then decrypt with the answer
+  sm <- env_rt$key_source
+  b  <- timelock_solve(base64_to_raw(sm$modulus), sm$t_squarings, chunk = 5000)
+  expect_identical(b, kr$timelock_master)          # solving == the trapdoor answer
+  expect_identical(se_decrypt(env_rt, b), payload)
+  # the creator's master key decrypts instantly (same value)
+  expect_identical(se_decrypt(env_rt, kr$timelock_master), payload)
+  # a wrong solution fails closed on the AEAD tag
+  wrong <- b; wrong[1] <- as.raw(bitwXor(as.integer(wrong[1]), 1L))
+  expect_error(se_decrypt(env_rt, wrong))
+})
+
+test_that("time-lock without a master keeps no shortcut (true time-lock)", {
+  skip_if_not(crypto_backend_available("tlock"), "native time-lock backend not built")
+  kr <- resolve_key(list(type = "timelock", bits = 1024L, t_squarings = 5000,
+                         target_seconds = 1, rate_est = 5000, keep_master = FALSE))
+  expect_null(kr$timelock_master)                  # trapdoor destroyed, no b retained
+  env <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "tl2.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+  sm <- env_rt$key_source
+  b <- timelock_solve(base64_to_raw(sm$modulus), sm$t_squarings, chunk = 2500)
+  expect_identical(se_decrypt(env_rt, b), payload) # only the solved puzzle opens it
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
@@ -236,4 +288,6 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("shamir"))
   expect_equal("fpe-ff1" %in% s$id[s$available],
                crypto_backend_available("fpe-ff1"))
+  expect_equal("tlock" %in% s$id[s$available],
+               crypto_backend_available("tlock"))
 })

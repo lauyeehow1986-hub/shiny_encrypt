@@ -32,6 +32,17 @@ key_material_files <- function(keyres, scheme_id = "aead") {
       )
     }
   }
+  # Time-lock creator master: the puzzle solution, letting the owner skip the wait.
+  if (!is.null(keyres$timelock_master)) {
+    files[["timelock_master"]] <- list(
+      name = "timelock_master.key.txt",
+      text = paste0(
+        "# shinyEncrypt TIME-LOCK MASTER key (the puzzle solution).\n",
+        "# It lets YOU decrypt immediately, skipping the time-lock wait.\n",
+        "# Keep it private: anyone with it bypasses the delay entirely. hex:\n",
+        sodium::bin2hex(as_raw(keyres$timelock_master)), "\n")
+    )
+  }
   files
 }
 

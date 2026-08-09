@@ -38,6 +38,8 @@ app_server <- function(input, output, session) {
       ksrc <- c(ksrc, "Recipient public key (PQC hybrid)" = "hybrid_pqc")
     if (isTRUE(crypto_backend_available("shamir")))
       ksrc <- c(ksrc, "Random key, split into Shamir shares (t-of-n)" = "shamir")
+    if (isTRUE(crypto_backend_available("tlock")))
+      ksrc <- c(ksrc, "Time-lock (decrypt only after a delay)" = "timelock")
     shiny::updateSelectInput(session, "keysrc", choices = ksrc,
                              selected = shiny::isolate(input$keysrc))
   })
@@ -105,8 +107,35 @@ app_server <- function(input, output, session) {
       }),
       "shamir"        = list(type = "shamir",
                              t = as.integer(input$shamir_t %||% 2L),
-                             n = as.integer(input$shamir_n %||% 3L)))
+                             n = as.integer(input$shamir_n %||% 3L)),
+      "timelock"      = {
+        secs <- as.numeric(input$tl_amount %||% 10) * as.numeric(input$tl_unit %||% 60)
+        rate <- tl_current_rate(input$tl_bits %||% 2048L)
+        if (!is.finite(rate) || rate <= 0) rate <- 1e6
+        list(type = "timelock", bits = as.integer(input$tl_bits %||% 2048L),
+             t_squarings = timelock_squarings(secs, rate),
+             rate_est = rate, target_seconds = secs,
+             keep_master = isTRUE(input$tl_keep_master))
+      })
   }
+
+  # Live estimate of the time-lock puzzle size for the chosen delay/modulus.
+  output$tl_estimate <- shiny::renderUI({
+    shiny::req(identical(input$keysrc, "timelock"))
+    rate <- tl_current_rate(input$tl_bits %||% 2048L)
+    secs <- as.numeric(input$tl_amount %||% 0) * as.numeric(input$tl_unit %||% 1)
+    if (!is.finite(rate) || rate <= 0)
+      return(shiny::div(class = "small text-muted", "Calibrating this machine…"))
+    Tsq <- timelock_squarings(secs, rate)
+    shiny::div(class = "alert alert-info small py-2",
+      shiny::HTML(sprintf(
+        paste0("Puzzle size: <b>%s</b> sequential squarings (this machine does ",
+               "~%s/sec). The recipient must compute non-stop for about the chosen ",
+               "delay; the <b>actual</b> time depends on the solver's single-core ",
+               "speed and cannot be parallelised away."),
+        format(Tsq, big.mark = ",", scientific = FALSE),
+        format(round(rate), big.mark = ",", scientific = FALSE))))
+  })
 
   # ---- PQC keypair generation (hybrid X25519 + ML-KEM-768) ----
   shiny::observeEvent(input$gen_pqc, {
@@ -281,6 +310,8 @@ app_server <- function(input, output, session) {
       "hybrid_pqc"    = "This artifact used a PQC HYBRID key — upload the recipient's .secret key below.",
       "shamir"        = sprintf("This artifact used SHAMIR custody — upload at least %d of the %d share files below.",
                                 as.integer(env$key_source$t %||% 2L), as.integer(env$key_source$n %||% 3L)),
+      "timelock"      = sprintf("This artifact is TIME-LOCKED (sealed for ~%s) — solve the puzzle below, or supply the creator's master key.",
+                                .tl_human(env$key_source$target_seconds)),
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
@@ -296,6 +327,25 @@ app_server <- function(input, output, session) {
                        multiple = TRUE),
       shiny::helpText(class = "small text-muted",
         sprintf("Select %d or more share_*.txt files at once. Fewer than %d cannot recover the key.", t, t)))
+  })
+
+  # Time-lock: choose to solve the puzzle (wait) or supply the creator's master.
+  output$dec_timelock_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || !identical(env$key_source$type, "timelock")) return(NULL)
+    sm <- env$key_source
+    shiny::tagList(
+      shiny::helpText(class = "small text-muted",
+        sprintf("Sealed for ~%s (%s sequential squarings). Solving runs your CPU non-stop for about that long; a faster CPU finishes sooner.",
+                .tl_human(sm$target_seconds),
+                format(as.numeric(sm$t_squarings %||% 0), big.mark = ",", scientific = FALSE))),
+      shiny::radioButtons("tl_dec_mode", NULL,
+        c("Solve the puzzle now (compute the delay)" = "solve",
+          "I have the creator's master key" = "master"),
+        selected = "solve"),
+      shiny::conditionalPanel(
+        "input.tl_dec_mode == 'master'",
+        shiny::fileInput("tl_master_up", "Creator master key (timelock_master.key.txt)")))
   })
 
   # Optional signer-key pinning: shown only for signed artifacts. Uploading the
@@ -348,6 +398,24 @@ app_server <- function(input, output, session) {
           stop(sprintf("Need at least %d shares to reconstruct the key; you uploaded %d.",
                        need, nrow(input$dec_shares)))
         do.call(c, lapply(input$dec_shares$datapath, read_secret_bytes))  # concat shares
+      } else if (t == "timelock") {
+        sm <- env$key_source
+        if (identical(input$tl_dec_mode %||% "solve", "master")) {
+          if (is.null(input$tl_master_up))
+            stop("Choose 'Solve the puzzle' or upload the creator's master key file.")
+          read_secret_bytes(input$tl_master_up$datapath)     # secret = b (the solution)
+        } else {
+          N   <- base64_to_raw(sm$modulus %||% stop("Artifact is missing its time-lock modulus."))
+          Tsq <- as.numeric(sm$t_squarings %||% stop("Artifact is missing its squaring count."))
+          shiny::withProgress(message = "Solving the time-lock puzzle…", value = 0, {
+            timelock_solve(N, Tsq, on_progress = function(done, total)
+              shiny::setProgress(
+                value = done / total,
+                detail = sprintf("%s / %s squarings",
+                                 format(done, big.mark = ",", scientific = FALSE),
+                                 format(total, big.mark = ",", scientific = FALSE))))
+          })
+        }
       } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
@@ -538,8 +606,8 @@ app_server <- function(input, output, session) {
   # not wake them until a tab change — which leaves the Encrypt tab blank after an
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
-               "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature",
-               "dec_signpub_ui", "dec_shares_ui", "dec_source_hint", "dec_summary", "dec_preview",
+               "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature", "tl_estimate",
+               "dec_signpub_ui", "dec_shares_ui", "dec_timelock_ui", "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
                "fpe_preview", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
