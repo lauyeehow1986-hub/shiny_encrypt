@@ -46,7 +46,8 @@ register_all_schemes <- function() {
     "Encrypt to an identity string. Build the native package to enable.", cap("ibe"))
   .register_scheme_placeholder("fpe-ff1", "Native",
     "Format-Preserving Encryption (FF1)", "the native fpe crate",
-    "Keep field format (e.g. IDs). Build the native package to enable.", cap("fpe-ff1"))
+    "Column-level de-identification that keeps each field's length and character class — use the 'De-identify (FPE)' tab to tokenise ID columns and reverse them with the .fpekit.",
+    cap("fpe-ff1"))
   .register_scheme_placeholder("pre", "Native",
     "Proxy Re-Encryption", "the native recrypt crate",
     "Re-share ciphertext to another key. Build the native package to enable.", cap("pre"))

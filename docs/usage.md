@@ -32,6 +32,31 @@
    CSV/XLSX). Any signature is verified automatically; paste an **expected signer** key/fingerprint
    to *pin* who signed it (green = authenticated, amber = valid but unpinned, red = mismatch).
 
+## De-identify (FPE) — a separate tab
+
+Format-preserving encryption is its own workflow, not part of the encrypt/decrypt
+envelope flow. Use it to tokenise identifier **columns** of a table while keeping
+their format.
+
+1. **Apply** — upload a CSV/XLSX, tick the columns to de-identify, and pick an
+   alphabet (**Auto-detect** per column is recommended; you can force digits,
+   A–Z 0–9, or a–z A–Z 0–9). Each field becomes another field of the **same
+   length and character class** (`0012345` → `0847213`); characters outside the
+   alphabet (spaces, `-`, `/`) stay in place. It's deterministic, so equal values
+   map to equal tokens — joins on a tokenised ID still work. Values too short for
+   FF1's domain rule are left unchanged (and reported).
+2. **Download** — the de-identified CSV **and** the `.fpekit` (it holds the key
+   and the per-column recipe; treat it as secret — it is the only way to reverse).
+3. **Reverse** — switch to Reverse mode, upload the de-identified CSV + its
+   `.fpekit`, and the original values are restored exactly.
+4. **Consistent tokens across files** — reuse one `.fpekit` when de-identifying a
+   second file so the same identifier tokenises to the same value in both.
+
+> Deterministic FPE is **pseudonymisation, not anonymisation**: it hides an
+> identifier's content but preserves value frequencies and linkage, so it does
+> not defend against frequency analysis. Columns are read as text so leading
+> zeros survive; make sure ID columns really are text in your source file.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +

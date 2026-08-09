@@ -115,6 +115,46 @@ ui_decrypt <- function() {
   )
 }
 
+ui_fpe <- function() {
+  bslib::layout_sidebar(
+    sidebar = bslib::sidebar(
+      width = 360, title = "Format-preserving de-identification",
+      shiny::radioButtons("fpe_mode", NULL,
+        c("Apply — de-identify columns" = "apply",
+          "Reverse — restore originals" = "reverse")),
+      shiny::conditionalPanel(
+        "input.fpe_mode == 'apply'",
+        shiny::fileInput("fpe_infile", "CSV / XLSX to de-identify",
+                         accept = c(".csv", ".tsv", ".xlsx", ".xls")),
+        shiny::uiOutput("fpe_col_ui"),
+        shiny::selectInput("fpe_alpha", "Alphabet",
+          c("Auto-detect per column (recommended)" = "auto",
+            "Force digits (0–9)" = "digits",
+            "Force A–Z 0–9" = "alnum_upper",
+            "Force a–z A–Z 0–9" = "alnum")),
+        shiny::fileInput("fpe_kit_reuse",
+          "Reuse an existing .fpekit (optional — for matching tokens across files)"),
+        shiny::actionButton("fpe_apply", "De-identify", class = "btn-primary w-100")),
+      shiny::conditionalPanel(
+        "input.fpe_mode == 'reverse'",
+        shiny::fileInput("fpe_rev_infile", "De-identified CSV / XLSX",
+                         accept = c(".csv", ".tsv", ".xlsx", ".xls")),
+        shiny::fileInput("fpe_rev_kit", ".fpekit (key + recipe)"),
+        shiny::actionButton("fpe_reverse", "Restore originals", class = "btn-primary w-100")),
+      .disclaimer()
+    ),
+    bslib::card(
+      bslib::card_header("Format-preserving encryption (FF1)"),
+      bslib::card_body(
+        shiny::uiOutput("fpe_status"),
+        shiny::verbatimTextOutput("fpe_summary"),
+        shiny::uiOutput("fpe_downloads"),
+        shiny::tableOutput("fpe_preview")
+      )
+    )
+  )
+}
+
 ui_schemes <- function() {
   bslib::card(
     bslib::card_header("Cryptographic scheme catalogue"),
@@ -139,6 +179,7 @@ app_ui <- function() {
     title = "shinyEncrypt", theme = app_theme(), id = "nav",
     bslib::nav_panel("Encrypt", ui_encrypt()),
     bslib::nav_panel("Decrypt", ui_decrypt()),
+    bslib::nav_panel("De-identify (FPE)", ui_fpe()),
     bslib::nav_panel("Schemes", ui_schemes()),
     bslib::nav_panel("How to use", ui_help()),
     bslib::nav_spacer(),

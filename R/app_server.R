@@ -13,7 +13,7 @@ app_server <- function(input, output, session) {
 
   rv <- shiny::reactiveValues(env = NULL, keyres = NULL, keyfiles = list(),
                               dec_env = NULL, dec_pt = NULL, pqc_keys = NULL,
-                              sign_keys = NULL)
+                              sign_keys = NULL, fpe_out = NULL, fpe_rev = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -405,6 +405,119 @@ app_server <- function(input, output, session) {
     content  = function(file) utils::write.csv(restore_object(rv$dec_pt, rv$dec_env$orig_kind),
                                                file, row.names = FALSE))
 
+  # ---------- De-identify (format-preserving encryption, FF1) ----------
+  fpe_in <- shiny::reactive({
+    shiny::req(input$fpe_infile)
+    fpe_read_df(input$fpe_infile$datapath, input$fpe_infile$name)
+  })
+
+  output$fpe_status <- shiny::renderUI({
+    if (!isTRUE(crypto_backend_available("fpe-ff1")))
+      return(shiny::div(class = "alert alert-warning small py-2",
+        shiny::HTML("Format-preserving encryption needs the native backend. Build it via <code>tools/build_native.R</code> and restart the app.")))
+    shiny::div(class = "alert alert-info small py-2",
+      shiny::HTML(paste0(
+        "FF1 keeps each field's length &amp; character class (e.g. <code>0012345</code> &rarr; <code>0847213</code>). ",
+        "It is <b>deterministic pseudonymisation</b> — the same value always maps to the same token (so joins survive), ",
+        "which means it hides identifier <i>content</i> but preserves value frequencies and linkage. It is not anonymisation.")))
+  })
+
+  output$fpe_col_ui <- shiny::renderUI({
+    df <- tryCatch(fpe_in(), error = function(e) NULL)
+    if (is.null(df)) return(shiny::helpText(class = "small text-muted",
+                                            "Upload a file to choose which columns to de-identify."))
+    shiny::checkboxGroupInput("fpe_cols", "Columns to de-identify", choices = names(df))
+  })
+
+  shiny::observeEvent(input$fpe_apply, {
+    tryCatch({
+      if (!isTRUE(crypto_backend_available("fpe-ff1")))
+        stop("Native FF1 backend not built — run tools/build_native.R and restart.")
+      df <- fpe_in()
+      cols <- input$fpe_cols
+      if (length(cols) == 0) stop("Select at least one column to de-identify.")
+      key <- if (!is.null(input$fpe_kit_reuse))
+        sodium::hex2bin(fpe_parse_kit(readLines(input$fpe_kit_reuse$datapath, warn = FALSE))$key)
+      else sodium::random(32L)
+      res <- shiny::withProgress(message = "De-identifying…", value = 0.5,
+        fpe_apply_table(df, cols, key, mode = input$fpe_alpha))
+      rv$fpe_out <- list(df = res$df, kit = fpe_build_kit(key, res$recipe),
+                         stats = res$stats, name = input$fpe_infile$name)
+      shiny::showNotification(
+        "De-identified. Download the CSV and the .fpekit — the .fpekit holds the key and is the only way to reverse it.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("FPE failed:", conditionMessage(e)), type = "error", duration = 10))
+  })
+
+  shiny::observeEvent(input$fpe_reverse, {
+    tryCatch({
+      if (!isTRUE(crypto_backend_available("fpe-ff1")))
+        stop("Native FF1 backend not built — run tools/build_native.R and restart.")
+      shiny::req(input$fpe_rev_infile, input$fpe_rev_kit)
+      df  <- fpe_read_df(input$fpe_rev_infile$datapath, input$fpe_rev_infile$name)
+      kit <- fpe_parse_kit(readLines(input$fpe_rev_kit$datapath, warn = FALSE))
+      out <- shiny::withProgress(message = "Restoring…", value = 0.5,
+                                 fpe_reverse_table(df, kit))
+      rv$fpe_rev <- list(df = out, name = input$fpe_rev_infile$name,
+                         cols = vapply(kit$columns, function(c) c$name, character(1)))
+      shiny::showNotification("Restored original values.", type = "message")
+    }, error = function(e)
+      shiny::showNotification(paste("Restore failed:", conditionMessage(e)), type = "error", duration = 10))
+  })
+
+  output$fpe_summary <- shiny::renderText({
+    if (identical(input$fpe_mode, "reverse")) {
+      r <- rv$fpe_rev; shiny::req(r)
+      sprintf("Restored %d row(s). Columns reversed from the recipe: %s.",
+              nrow(r$df), paste(r$cols, collapse = ", "))
+    } else {
+      o <- rv$fpe_out; shiny::req(o)
+      lines <- vapply(names(o$stats), function(cn) {
+        s <- o$stats[[cn]]
+        sprintf("  %s: %d tokenised, %d left as-is (too short for FF1), %d NA",
+                cn, s$n_tokenised, s$n_short, s$n_na)
+      }, character(1))
+      paste0(sprintf("De-identified %d column(s) of '%s':\n", length(o$stats), o$name),
+             paste(lines, collapse = "\n"),
+             "\n\nDownload BOTH files below. Reverse with the de-identified CSV + the .fpekit.")
+    }
+  })
+
+  output$fpe_preview <- shiny::renderTable({
+    df <- if (identical(input$fpe_mode, "reverse")) {
+      shiny::req(rv$fpe_rev); rv$fpe_rev$df
+    } else if (!is.null(rv$fpe_out)) rv$fpe_out$df
+      else tryCatch(fpe_in(), error = function(e) NULL)
+    shiny::req(!is.null(df))
+    .cap_preview(df)$preview
+  }, striped = TRUE, bordered = TRUE, spacing = "xs")
+
+  output$fpe_downloads <- shiny::renderUI({
+    if (identical(input$fpe_mode, "reverse")) {
+      shiny::req(rv$fpe_rev)
+      shiny::div(class = "d-inline-block me-2 mb-2",
+        shiny::downloadButton("fpe_dl_restored", "Download restored CSV", class = "btn-outline-primary"))
+    } else {
+      shiny::req(rv$fpe_out)
+      shiny::tagList(
+        shiny::div(class = "d-inline-block me-2 mb-2",
+          shiny::downloadButton("fpe_dl_csv", "Download de-identified CSV", class = "btn-outline-primary")),
+        shiny::div(class = "d-inline-block me-2 mb-2",
+          shiny::downloadButton("fpe_dl_kit", "Download .fpekit (key + recipe)", class = "btn-outline-danger")))
+    }
+  })
+
+  output$fpe_dl_csv <- shiny::downloadHandler(
+    filename = function() paste0("deidentified_", tools::file_path_sans_ext(rv$fpe_out$name), ".csv"),
+    content  = function(file) utils::write.csv(rv$fpe_out$df, file, row.names = FALSE, na = ""))
+  output$fpe_dl_kit <- shiny::downloadHandler(
+    filename = function() paste0("deidentified_", tools::file_path_sans_ext(rv$fpe_out$name), ".fpekit"),
+    content  = function(file) writeLines(rv$fpe_out$kit, file))
+  output$fpe_dl_restored <- shiny::downloadHandler(
+    filename = function() paste0("restored_", tools::file_path_sans_ext(rv$fpe_rev$name), ".csv"),
+    content  = function(file) utils::write.csv(rv$fpe_rev$df, file, row.names = FALSE, na = ""))
+
   # ---------- Schemes catalogue ----------
   output$scheme_table <- shiny::renderTable({
     s <- list_schemes()
@@ -427,7 +540,8 @@ app_server <- function(input, output, session) {
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
                "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature",
                "dec_signpub_ui", "dec_shares_ui", "dec_source_hint", "dec_summary", "dec_preview",
-               "dec_downloads", "scheme_table", "help_md")) {
+               "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
+               "fpe_preview", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }
 }

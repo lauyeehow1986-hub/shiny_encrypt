@@ -30,3 +30,6 @@ hkdf = "0.12"
 sha2 = "0.10"
 # Shamir secret sharing (t-of-n) over GF(256). Pure Rust, no C deps.
 sharks = "0.5"
+# Format-preserving encryption (FF1, NIST SP 800-38G) + its AES block cipher.
+fpe = "0.6"
+aes = "0.8"

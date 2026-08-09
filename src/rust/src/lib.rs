@@ -27,6 +27,9 @@ use rand_core::OsRng;
 
 use sharks::{Share, Sharks};
 
+use aes::Aes256;
+use fpe::ff1::{FlexibleNumeralString, FF1};
+
 // ---- fixed lengths (bytes) --------------------------------------------------
 const X_SK: usize = 32;   // X25519 secret
 const X_PK: usize = 32;   // X25519 public
@@ -248,6 +251,79 @@ fn native_shamir_combine(shares_concat: &[u8], share_len: i32) -> std::result::R
 }
 
 // ============================================================================
+// Format-preserving encryption (FF1, NIST SP 800-38G) over an arbitrary radix.
+//
+// A thin, fixed-layout primitive over a sequence of numerals (one per byte, each
+// < radix). R owns the character<->numeral mapping, the passthrough of
+// non-alphabet characters, and the per-value domain rule, so all of that stays
+// testable in pure R. AES-256 (32-byte key). Deterministic per (key, tweak,
+// input): equal inputs map to equal outputs, preserving referential integrity.
+// ============================================================================
+
+fn ff1_apply(
+    key: &[u8],
+    tweak: &[u8],
+    radix: i32,
+    numerals: &[u8],
+    encrypt: bool,
+) -> std::result::Result<Vec<u8>, String> {
+    if key.len() != 32 {
+        return Err(format!("ff1: key must be 32 bytes for AES-256 (got {})", key.len()));
+    }
+    if !(2..=256).contains(&radix) {
+        return Err(format!("ff1: radix must be in 2..=256 (got {radix})"));
+    }
+    let radix = radix as u32;
+    let n = numerals.len();
+    if n < 2 {
+        return Err("ff1: need at least 2 numerals".to_string());
+    }
+    for &d in numerals {
+        if (d as u32) >= radix {
+            return Err(format!("ff1: numeral {d} out of range for radix {radix}"));
+        }
+    }
+    // FF1 domain rule (SP 800-38G): radix^len must be >= 1_000_000.
+    if (radix as f64).powi(n as i32) < 1_000_000.0 {
+        return Err(format!(
+            "ff1: domain too small (radix^len < 1e6 for radix={radix}, len={n})"
+        ));
+    }
+    let ff1 = FF1::<Aes256>::new(key, radix).map_err(|e| format!("ff1: bad key/radix: {e:?}"))?;
+    let ns = FlexibleNumeralString::from(numerals.iter().map(|&b| b as u16).collect::<Vec<u16>>());
+    let out = if encrypt {
+        ff1.encrypt(tweak, &ns)
+    } else {
+        ff1.decrypt(tweak, &ns)
+    }
+    .map_err(|e| format!("ff1: {e:?}"))?;
+    let out_v: Vec<u16> = out.into();
+    Ok(out_v.into_iter().map(|x| x as u8).collect())
+}
+
+/// FF1-encrypt a sequence of numerals (one per byte, each < radix). 32-byte key.
+#[extendr]
+fn native_ff1_encrypt(
+    key: &[u8],
+    tweak: &[u8],
+    radix: i32,
+    numerals: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    ff1_apply(key, tweak, radix, numerals, true)
+}
+
+/// FF1-decrypt a sequence of numerals (one per byte, each < radix). 32-byte key.
+#[extendr]
+fn native_ff1_decrypt(
+    key: &[u8],
+    tweak: &[u8],
+    radix: i32,
+    numerals: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    ff1_apply(key, tweak, radix, numerals, false)
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -266,5 +342,7 @@ extendr_module! {
     fn native_mldsa_verify;
     fn native_shamir_split;
     fn native_shamir_combine;
+    fn native_ff1_encrypt;
+    fn native_ff1_decrypt;
     fn native_backend_version;
 }

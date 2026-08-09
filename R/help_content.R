@@ -50,5 +50,23 @@ AEAD artifacts with only <code>sodium</code> + <code>openssl</code> installed, a
 embedded envelope is parsed as data — nothing in the artifact is executed. Artifacts using
 a native key source (Argon2id, PQC hybrid, Shamir) decrypt through the installed package
 instead, since they need the Rust backend. The native features appear only when that backend
-is built and staged.</p>'
+is built and staged.</p>
+<h4>De-identify (FPE) — a separate tab</h4>
+<p>Format-preserving encryption tokenises identifier <b>columns</b> of a table while
+keeping their format — it is its own tab, not part of the encrypt/decrypt flow (native
+backend required).</p>
+<ol>
+  <li><b>Apply</b> — upload a CSV/XLSX, tick the columns to de-identify, and choose an
+      alphabet (<b>Auto-detect</b> per column recommended). Each field becomes another of
+      the <b>same length and character class</b> (<code>0012345</code> &rarr;
+      <code>0847213</code>); delimiters like <code>-</code> pass through in place. It is
+      deterministic, so equal values map to equal tokens and joins survive. Values too
+      short for the FF1 domain rule are left unchanged.</li>
+  <li><b>Download</b> the de-identified CSV <b>and</b> the <code>.fpekit</code> (key +
+      recipe — secret; the only way to reverse).</li>
+  <li><b>Reverse</b> — switch to Reverse mode and upload the CSV + its <code>.fpekit</code>
+      to restore the originals exactly. Reuse one kit across files for matching tokens.</li>
+</ol>
+<p class="text-muted small">Deterministic FPE is <b>pseudonymisation, not anonymisation</b>:
+it hides identifier content but preserves value frequencies and linkage.</p>'
 }

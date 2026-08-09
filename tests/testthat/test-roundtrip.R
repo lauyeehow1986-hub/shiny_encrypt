@@ -176,6 +176,53 @@ test_that("Shamir key source (if built) round-trips through t shares, fails unde
   expect_error(se_decrypt(env_rt, kr$shares[[2]]))
 })
 
+test_that("native FF1 (if built) round-trips, preserves length, and is deterministic", {
+  skip_if_not(crypto_backend_available("fpe-ff1"), "native FF1 backend not built")
+  key <- sodium::random(32L)
+  tweak <- charToRaw("patient_id")
+  numerals <- c(0L, 0L, 1L, 2L, 3L, 4L, 5L)     # 7 digits, radix 10 (>= 1e6 domain)
+  ct <- native_ff1(key, tweak, 10L, numerals, encrypt = TRUE)
+  expect_length(ct, length(numerals))
+  expect_true(all(ct >= 0L & ct <= 9L))
+  expect_false(identical(ct, numerals))          # actually changed
+  expect_identical(native_ff1(key, tweak, 10L, ct, encrypt = FALSE), numerals)
+  # deterministic: same key+tweak+input -> same output
+  expect_identical(native_ff1(key, tweak, 10L, numerals, encrypt = TRUE), ct)
+  # a different tweak diverges
+  expect_false(identical(native_ff1(key, charToRaw("other"), 10L, numerals, TRUE), ct))
+  # domain rule: too few numerals is rejected
+  expect_error(native_ff1(key, tweak, 10L, c(1L, 2L, 3L), encrypt = TRUE))
+})
+
+test_that("FF1 column/table de-identification (if built) preserves format and reverses", {
+  skip_if_not(crypto_backend_available("fpe-ff1"), "native FF1 backend not built")
+  df <- data.frame(
+    mrn   = c("0012345", "0012345", "9987654", "42"),   # dup + one too-short
+    code  = c("AB-1234-CD", "ZZ-0000-YY", "MM-5678-NN", "QQ-4321-RR"),
+    stringsAsFactors = FALSE)
+  key <- sodium::random(32L)
+  res <- fpe_apply_table(df, c("mrn", "code"), key, mode = "auto")
+
+  # mrn: radix-10 alphabet; tokens are 7 digits, unchanged length, still digits
+  tok <- res$df$mrn
+  expect_true(all(nchar(tok) == nchar(df$mrn)))
+  expect_true(grepl("^[0-9]{7}$", tok[1]))
+  expect_false(tok[1] == df$mrn[1])              # actually tokenised
+  expect_identical(tok[1], tok[2])               # equal inputs -> equal tokens (joins survive)
+  expect_identical(res$df$mrn[4], "42")          # too short -> left as-is
+  expect_equal(res$stats$mrn$n_tokenised, 3L)
+  expect_equal(res$stats$mrn$n_short, 1L)
+
+  # code: dashes pass through in place; alphanumerics stay in the same class
+  expect_true(all(grepl("^..-....-..$", res$df$code)))
+  expect_false(any(res$df$code == df$code))
+
+  # reverse through the kit restores the exact original
+  kit <- fpe_parse_kit(fpe_build_kit(key, res$recipe))
+  expect_identical(as.character(fpe_reverse_table(res$df, kit)$mrn), df$mrn)
+  expect_identical(as.character(fpe_reverse_table(res$df, kit)$code), df$code)
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
@@ -187,4 +234,6 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("ml-dsa"))
   expect_equal("shamir" %in% s$id[s$available],
                crypto_backend_available("shamir"))
+  expect_equal("fpe-ff1" %in% s$id[s$available],
+               crypto_backend_available("fpe-ff1"))
 })

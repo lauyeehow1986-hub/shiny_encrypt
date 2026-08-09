@@ -55,6 +55,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_hybrid_keygen")) caps <- c(caps, "hpke-hybrid")
     if (has("wrap__native_mldsa_keygen"))  caps <- c(caps, "ml-dsa")
     if (has("wrap__native_shamir_split"))  caps <- c(caps, "shamir")
+    if (has("wrap__native_ff1_encrypt"))   caps <- c(caps, "fpe-ff1")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)

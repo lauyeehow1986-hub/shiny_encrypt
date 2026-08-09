@@ -23,7 +23,8 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **Hybrid PQC key source** — X25519 + ML-KEM-768 KEM | ✅ working when native backend built |
 | **ML-DSA-65 envelope signing** (+ signer pinning on decrypt) | ✅ working when native backend built |
 | **Shamir t-of-n** key custody | ✅ working when native backend built |
-| CP-ABE, FPE, PRE, time-lock | ⛏ native crate (Phase 5) |
+| **FF1 format-preserving** column de-identification | ✅ working when native backend built |
+| CP-ABE, PRE, time-lock | ⛏ native crate (Phase 5) |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
@@ -67,6 +68,8 @@ Once the native backend is built and staged (`tools/build_native.R` → `inst/li
 - **Hybrid PQC key source** — an **X25519 + ML-KEM-768** KEM. Generate a keypair in-app, hand out the `.pub`, and encrypt to it; the encapsulation rides in the envelope and only the matching `.secret` bundle decapsulates the data key. Classical **and** post-quantum security — an attacker must break *both* X25519 and ML-KEM.
 - **ML-DSA-65 envelope signing** — FIPS 204 post-quantum signatures over the meaning-bearing envelope fields (ciphertext, params, key source, digest — everything but the signature block). The public key is embedded, so the Decrypt tab verifies with no extra upload and shows a signer **fingerprint**. A valid signature proves integrity + "signed by whoever holds that key"; to prove *who*, paste their fingerprint/public key into the **expected signer** field to pin it (green = authenticated, amber = valid-but-unpinned, red = mismatch).
 - **Shamir t-of-n custody** — split a fresh random data key across `n` custodians (GF(256) secret sharing). The key itself is never written; you get `n` `share_k_of_n.txt` files. Any **t** reconstruct it; any **t-1** reveal nothing (information-theoretic). Decrypt takes any t shares via a multi-file upload; too few is blocked, and even a bypass fails closed on the AEAD tag.
+
+- **FF1 format-preserving de-identification** — a separate **De-identify (FPE)** tab (not the envelope flow). FF1 (NIST SP 800-38G) tokenises chosen table columns while keeping each field's **exact length and character class** — `0012345` → `0847213`, `AB-1234-CD` → `ZK-8071-MR` (delimiters pass through in place). It's deterministic, so equal values map to equal tokens and joins survive; alphabets are auto-detected per column (radix 10/36/62) and overridable. Output is a de-identified CSV plus a secret `.fpekit` (key + recipe) that reverses it exactly. Deterministic FPE is **pseudonymisation, not anonymisation** — it hides identifier content but preserves value frequencies and linkage; the tab states this plainly.
 
 Each is capability-gated: the app only shows a feature after probing that the loaded library actually exports it, so an older DLL never advertises something it can't do. Enabling a newly-built feature needs an app restart (the running app locks the staged DLL).
 
