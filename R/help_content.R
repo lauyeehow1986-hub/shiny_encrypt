@@ -94,5 +94,22 @@ backend required).</p>
       to restore the originals exactly. Reuse one kit across files for matching tokens.</li>
 </ol>
 <p class="text-muted small">Deterministic FPE is <b>pseudonymisation, not anonymisation</b>:
-it hides identifier content but preserves value frequencies and linkage.</p>'
+it hides identifier content but preserves value frequencies and linkage.</p>
+<h4>Private stats (DP) &mdash; a separate tab</h4>
+<p>Differential privacy publishes a noisy <b>aggregate</b> (a count, sum, or mean) over a table
+while bounding how much any single row can change the answer.</p>
+<ol>
+  <li><b>Upload</b> a CSV/XLSX and pick a <b>statistic</b>: count of rows, count by group (a
+      histogram), sum of a column, or mean of a column.</li>
+  <li><b>Set epsilon</b> for this release (smaller means more private and noisier). For sums and
+      means, give <b>clamp bounds</b> so each value is clipped into a known range, and pick
+      <b>Laplace</b> (epsilon-DP) or <b>Gaussian</b> (epsilon, delta-DP).</li>
+  <li><b>Release</b> &mdash; the noisy value appears next to the true value (the true value is for
+      your reference; only the noisy value is safe to share). A <b>budget bar</b> tracks the total
+      epsilon spent across releases.</li>
+</ol>
+<p class="text-muted small">DP is not encryption and not de-identification: it releases a noisy
+answer, not the rows. The guarantee holds only if you respect the budget and choose clamp bounds
+from domain knowledge rather than by peeking at the data. Counts use an integer (discrete) noise
+mechanism; all noise comes from a secure random source.</p>'
 }

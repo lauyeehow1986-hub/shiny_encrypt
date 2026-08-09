@@ -27,6 +27,7 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **Time-lock** key source (RSW sequential-squaring puzzle) | ✅ working when native backend built |
 | **CP-ABE** attribute-policy key source (BSW) | ✅ working when native backend built |
 | **IBE** identity key source (Kiltz-Vahlis IBE1) | ✅ working when native backend built |
+| **Differential privacy** — noisy counts / sums / means with an ε budget | ✅ working (pure-R, own **Private stats (DP)** tab) |
 | **PRE** proxy re-encryption (Umbral) | ✅ working via the optional **GPL** companion `shinyEncryptPRE` |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |

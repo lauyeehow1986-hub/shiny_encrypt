@@ -29,6 +29,12 @@ register_all_schemes <- function() {
 
   cap <- function(name) function() crypto_backend_available(name)
 
+  # Privacy layer (real, pure-R, available now — a separate tab, not an envelope scheme)
+  .register_scheme_placeholder("dp", "Core",
+    "Differential privacy (noisy aggregates)", "the Private stats (DP) tab",
+    "Release counts, sums, and means with calibrated Laplace/Gaussian noise and a tracked epsilon budget — use the 'Private stats (DP)' tab. This protects query *results*, not the file itself: no single row measurably changes the output.",
+    function() TRUE)
+
   # Native (real once the Rust/C++ crate is built)
   .register_scheme_placeholder("hpke-hybrid", "Native",
     "Hybrid HPKE: X25519 + ML-KEM-768 key-wrap", "the native PQC crate",

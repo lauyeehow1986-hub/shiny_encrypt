@@ -78,6 +78,25 @@ their format.
 > not defend against frequency analysis. Columns are read as text so leading
 > zeros survive; make sure ID columns really are text in your source file.
 
+## Private stats (DP) — a separate tab
+
+Differential privacy lets you publish an **aggregate** (a count, sum, or mean) over a table
+while provably bounding how much any single row can affect the answer. It is its own tab, not
+part of the encrypt/decrypt flow.
+
+1. **Upload** a CSV/XLSX and pick a **statistic**: count of rows, count by group (a histogram),
+   sum of a column, or mean of a column.
+2. **Set the privacy loss** `epsilon` for this release (smaller = more private = noisier). For
+   sums/means, give **clamp bounds** `[lower, upper]` — every value is clipped into that range so
+   the sensitivity is bounded — and choose **Laplace** (ε-DP) or **Gaussian** (ε, δ-DP).
+3. **Release** — the noisy statistic is shown (with the true value alongside, for your reference
+   only — *only the noisy value is safe to share*). A running **budget bar** tracks the total ε
+   (and δ) spent across releases; each query adds to it (sequential composition), while the bins of
+   one histogram share a single ε (parallel composition).
+
+Counts and histograms use a **discrete** (integer) Laplace mechanism that avoids the floating-point
+pitfalls of naive continuous samplers; all noise is drawn from a cryptographically secure source.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -115,4 +134,9 @@ their format.
   verified, so wrong-receiver or tampered fragments fail closed. Whoever holds the re-encryption key
   plus a cooperating proxy can re-target the ciphertext to the named receiver — guard re-encryption
   keys accordingly.
+- **Differential privacy** is not encryption and not de-identification: it releases a *noisy
+  aggregate*, not the rows. The guarantee holds only if you respect the **budget** — every release
+  spends ε, and spending too much (or re-running until the noise looks small) erodes the protection.
+  Clamp bounds must be chosen from domain knowledge, *not* by peeking at the data. The Gaussian
+  mechanism trades a small failure probability δ for less noise; Laplace gives pure ε-DP.
 - **Not for diagnosis or clinical decision-making.** You are responsible for key custody.

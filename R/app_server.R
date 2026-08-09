@@ -797,6 +797,9 @@ app_server <- function(input, output, session) {
     shiny::HTML(help_html())
   })
 
+  # Private stats (DP) tab handlers (pure-R, always available).
+  dp_server(input, output, session, rv)
+
   # Proxy Re-Encryption tab handlers — only when the optional GPL companion is present.
   if (pre_companion_available()) pre_server(input, output, session, rv)
 
@@ -812,7 +815,8 @@ app_server <- function(input, output, session) {
                "dec_ibe_ui",
                "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
-               "fpe_preview", "scheme_table", "help_md")) {
+               "fpe_preview", "dp_group_ui", "dp_value_ui", "dp_status",
+               "dp_result", "dp_table", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }
 }
