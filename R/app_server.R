@@ -797,6 +797,9 @@ app_server <- function(input, output, session) {
     shiny::HTML(help_html())
   })
 
+  # Proxy Re-Encryption tab handlers — only when the optional GPL companion is present.
+  if (pre_companion_available()) pre_server(input, output, session, rv)
+
   # Render outputs eagerly. bslib nav panels render their content hidden during
   # the first pass, so Shiny suspends the initially-active tab's outputs and does
   # not wake them until a tab change — which leaves the Encrypt tab blank after an

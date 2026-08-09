@@ -244,15 +244,21 @@ ui_help <- function() {
 }
 
 app_ui <- function() {
-  bslib::page_navbar(
-    title = "shinyEncrypt", theme = app_theme(), id = "nav",
+  panels <- list(
     bslib::nav_panel("Encrypt", ui_encrypt()),
     bslib::nav_panel("Decrypt", ui_decrypt()),
-    bslib::nav_panel("De-identify (FPE)", ui_fpe()),
+    bslib::nav_panel("De-identify (FPE)", ui_fpe())
+  )
+  # Proxy Re-Encryption is an optional GPL companion; show its tab only when installed.
+  if (pre_companion_available())
+    panels <- c(panels, list(bslib::nav_panel("Re-encrypt (PRE)", ui_pre())))
+  panels <- c(panels, list(
     bslib::nav_panel("Schemes", ui_schemes()),
     bslib::nav_panel("How to use", ui_help()),
     bslib::nav_spacer(),
     bslib::nav_item(shiny::tags$span(class = "navbar-text small",
                                      "v0.1 · not for clinical use"))
-  )
+  ))
+  do.call(bslib::page_navbar,
+          c(list(title = "shinyEncrypt", theme = app_theme(), id = "nav"), panels))
 }

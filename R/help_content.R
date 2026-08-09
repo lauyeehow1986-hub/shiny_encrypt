@@ -71,6 +71,12 @@ embedded envelope is parsed as data — nothing in the artifact is executed. Art
 a native key source (Argon2id, PQC hybrid, Shamir, time-lock, CP-ABE, IBE) decrypt through the installed
 package instead, since they need the Rust backend. The native features appear only when that
 backend is built and staged.</p>
+<p class="text-muted small"><b>Proxy re-encryption (PRE)</b> is an optional GPL-3 companion package
+(<code>shinyEncryptPRE</code>), kept separate from this MIT app because the umbral-pre crate is
+GPL-3.0. When it is installed, a <b>Re-encrypt (PRE)</b> tab appears: a delegator seals a file to
+their own key, then an untrusted proxy re-encrypts the ciphertext for a chosen receiver without
+decrypting it. Only the receiver secret opens the result, and mismatched or tampered fragments
+fail closed.</p>
 <h4>De-identify (FPE) — a separate tab</h4>
 <p>Format-preserving encryption tokenises identifier <b>columns</b> of a table while
 keeping their format — it is its own tab, not part of the encrypt/decrypt flow (native

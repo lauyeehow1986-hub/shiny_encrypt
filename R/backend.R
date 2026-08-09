@@ -8,9 +8,10 @@
 # Names of capabilities provided by the native package (Phase 4+).
 NATIVE_CAPS <- c(
   "argon2id", "ml-kem", "ml-dsa", "slh-dsa", "fn-dsa", "hpke-hybrid",
-  "cp-abe", "ibe", "fpe-ff1", "pre", "tlock", "shamir", "frost",
+  "cp-abe", "ibe", "fpe-ff1", "tlock", "shamir", "frost",
   "tfhe", "zk-stark", "psi", "oprf", "opaque", "sse-native"
-)
+)  # NB: "pre" is NOT here -- Proxy Re-Encryption lives in the optional GPL
+   # companion package shinyEncryptPRE, not the MIT core's native backend.
 
 # Is a native capability available in this session?
 crypto_backend_available <- function(name) {

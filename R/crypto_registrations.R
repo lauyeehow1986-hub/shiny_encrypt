@@ -51,8 +51,9 @@ register_all_schemes <- function() {
     "Column-level de-identification that keeps each field's length and character class — use the 'De-identify (FPE)' tab to tokenise ID columns and reverse them with the .fpekit.",
     cap("fpe-ff1"))
   .register_scheme_placeholder("pre", "Native",
-    "Proxy Re-Encryption", "the native recrypt crate",
-    "Re-share ciphertext to another key. Build the native package to enable.", cap("pre"))
+    "Proxy Re-Encryption (Umbral)", "the optional GPL companion package shinyEncryptPRE",
+    "Grant a receiver access to a file without decrypting it: the delegator seals to their own key and an untrusted proxy re-encrypts the ciphertext for the receiver. Ships as a SEPARATE GPL-3 package (umbral-pre is GPL-3.0) so the MIT core stays MIT; install it to get the 'Re-encrypt (PRE)' tab.",
+    function() isTRUE(tryCatch(pre_companion_available(), error = function(e) FALSE)))
   .register_scheme_placeholder("tlock", "Native",
     "Time-Lock Encryption (RSW sequential-squaring puzzle)", "the native time-lock crate",
     "Decrypt only after a delay — offered as the 'Time-lock' KEY SOURCE on the Encrypt tab; the Decrypt tab solves the puzzle (or takes the creator's master key).",

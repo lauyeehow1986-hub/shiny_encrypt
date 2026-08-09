@@ -27,13 +27,19 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **Time-lock** key source (RSW sequential-squaring puzzle) | ✅ working when native backend built |
 | **CP-ABE** attribute-policy key source (BSW) | ✅ working when native backend built |
 | **IBE** identity key source (Kiltz-Vahlis IBE1) | ✅ working when native backend built |
-| PRE | ⛏ native crate (Phase 5) |
+| **PRE** proxy re-encryption (Umbral) | ✅ working via the optional **GPL** companion `shinyEncryptPRE` |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
 The full catalogue (with per-session availability) is shown on the app's **Schemes** tab. The
 native features above light up automatically once `src/rust` is built and staged — the app
 probes the loaded library at startup and only offers what it can actually run.
+
+**Proxy re-encryption is a separate, optional package.** This repo is **MIT**, but the only
+mature Rust PRE crate (`umbral-pre`) is **GPL-3.0**. So PRE ships as a standalone GPL-3
+companion package, **`shinyEncryptPRE`** — its own package with its own native library. Install it
+and the app grows a **Re-encrypt (PRE)** tab; skip it and the MIT core is completely unaffected.
+This keeps the copyleft dependency out of the main project.
 
 ## Prerequisites
 

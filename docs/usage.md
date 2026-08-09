@@ -107,4 +107,12 @@ their format.
   extract — and therefore decrypt as — *any* identity, so it is an escrow root; guard the `.master`
   the same way. The identity is stored in the envelope in clear (it names *who* may decrypt), matched
   exactly, and there is no revocation — rotate the authority to cut an identity off.
+- **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
+  part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
+  separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to
+  their own key, then an untrusted proxy re-encrypts the ciphertext for a chosen receiver **without
+  decrypting it**. Only the receiver's secret opens the result; every key/capsule fragment is
+  verified, so wrong-receiver or tampered fragments fail closed. Whoever holds the re-encryption key
+  plus a cooperating proxy can re-target the ciphertext to the named receiver — guard re-encryption
+  keys accordingly.
 - **Not for diagnosis or clinical decision-making.** You are responsible for key custody.
