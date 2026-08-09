@@ -24,6 +24,10 @@ extern SEXP wrap__native_ff1_decrypt(SEXP key, SEXP tweak, SEXP radix, SEXP nume
 extern SEXP wrap__native_timelock_generate(SEXP bits, SEXP t);
 extern SEXP wrap__native_timelock_solve_steps(SEXP x, SEXP n, SEXP steps);
 extern SEXP wrap__native_timelock_calibrate(SEXP bits, SEXP millis);
+extern SEXP wrap__native_cpabe_setup(void);
+extern SEXP wrap__native_cpabe_keygen(SEXP pk, SEXP mk, SEXP attrs);
+extern SEXP wrap__native_cpabe_encrypt(SEXP pk, SEXP policy, SEXP plaintext);
+extern SEXP wrap__native_cpabe_decrypt(SEXP sk, SEXP ct);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -41,6 +45,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_timelock_generate",    (DL_FUNC) &wrap__native_timelock_generate,    2},
     {"wrap__native_timelock_solve_steps", (DL_FUNC) &wrap__native_timelock_solve_steps, 3},
     {"wrap__native_timelock_calibrate",   (DL_FUNC) &wrap__native_timelock_calibrate,   2},
+    {"wrap__native_cpabe_setup",     (DL_FUNC) &wrap__native_cpabe_setup,     0},
+    {"wrap__native_cpabe_keygen",    (DL_FUNC) &wrap__native_cpabe_keygen,    3},
+    {"wrap__native_cpabe_encrypt",   (DL_FUNC) &wrap__native_cpabe_encrypt,   3},
+    {"wrap__native_cpabe_decrypt",   (DL_FUNC) &wrap__native_cpabe_decrypt,   2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

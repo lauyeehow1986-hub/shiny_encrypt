@@ -13,7 +13,8 @@ app_server <- function(input, output, session) {
 
   rv <- shiny::reactiveValues(env = NULL, keyres = NULL, keyfiles = list(),
                               dec_env = NULL, dec_pt = NULL, pqc_keys = NULL,
-                              sign_keys = NULL, fpe_out = NULL, fpe_rev = NULL)
+                              sign_keys = NULL, fpe_out = NULL, fpe_rev = NULL,
+                              cpabe_keys = NULL, cpabe_issued = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -40,6 +41,8 @@ app_server <- function(input, output, session) {
       ksrc <- c(ksrc, "Random key, split into Shamir shares (t-of-n)" = "shamir")
     if (isTRUE(crypto_backend_available("tlock")))
       ksrc <- c(ksrc, "Time-lock (decrypt only after a delay)" = "timelock")
+    if (isTRUE(crypto_backend_available("cp-abe")))
+      ksrc <- c(ksrc, "Attribute policy (CP-ABE)" = "cpabe")
     shiny::updateSelectInput(session, "keysrc", choices = ksrc,
                              selected = shiny::isolate(input$keysrc))
   })
@@ -116,7 +119,19 @@ app_server <- function(input, output, session) {
              t_squarings = timelock_squarings(secs, rate),
              rate_est = rate, target_seconds = secs,
              keep_master = isTRUE(input$tl_keep_master))
-      })
+      },
+      "cpabe"         = list(type = "cpabe", policy = input$cpabe_policy %||% "", pk = {
+        if (!is.null(input$cpabe_pk_up)) read_secret_bytes(input$cpabe_pk_up$datapath)
+        else if (!is.null(rv$cpabe_keys)) rv$cpabe_keys$pk
+        else stop("Generate a CP-ABE authority or upload its public key (.pub) first.")
+      }))
+  }
+
+  # split a comma/newline-separated attribute list into a clean character vector
+  .cpabe_split_attrs <- function(s) {
+    if (is.null(s)) return(character())
+    parts <- trimws(strsplit(s, "[,\n]+")[[1]])
+    parts[nzchar(parts)]
   }
 
   # Live estimate of the time-lock puzzle size for the chosen delay/modulus.
@@ -166,6 +181,75 @@ app_server <- function(input, output, session) {
   output$dl_pqc_sec <- shiny::downloadHandler(
     filename = function() "recipient_pqc.secret",
     content  = function(file) writeLines(.pqc_hex_file(rv$pqc_keys$secret, "SECRET key"), file))
+
+  # ---- CP-ABE authority (BSW attribute-based encryption) ----
+  shiny::observeEvent(input$gen_cpabe, {
+    tryCatch({
+      rv$cpabe_keys <- native_cpabe_setup()
+      shiny::showNotification(
+        "CP-ABE authority generated. Keep the .master SECRET (it issues attribute keys); share the .pub so others can encrypt under a policy.",
+        type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("CP-ABE setup failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$cpabe_key_status <- shiny::renderUI({
+    if (is.null(rv$cpabe_keys)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2",
+      shiny::HTML("Authority ready. The <b>.pub</b> encrypts under a policy; the <b>.master</b> issues attribute keys and is SECRET."),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_cpabe_pub", ".pub", class = "btn-outline-primary btn-sm me-2"),
+        shiny::downloadButton("dl_cpabe_master", ".master", class = "btn-outline-danger btn-sm")))
+  })
+
+  .cpabe_hex_file <- function(bytes, kind)
+    paste0("# shinyEncrypt CP-ABE (BSW) authority ", kind, ", hex(JSON):\n",
+           sodium::bin2hex(as_raw(bytes)), "\n")
+  output$dl_cpabe_pub <- shiny::downloadHandler(
+    filename = function() "cpabe_authority.pub",
+    content  = function(file) writeLines(.cpabe_hex_file(rv$cpabe_keys$pk, "PUBLIC key"), file))
+  output$dl_cpabe_master <- shiny::downloadHandler(
+    filename = function() "cpabe_authority.master",
+    content  = function(file) writeLines(.cpabe_hex_file(rv$cpabe_keys$mk, "MASTER key (SECRET)"), file))
+
+  # Issue a per-recipient attribute key from the authority master.
+  shiny::observeEvent(input$cpabe_issue, {
+    tryCatch({
+      mk <- if (!is.null(input$cpabe_master_up)) read_secret_bytes(input$cpabe_master_up$datapath)
+            else if (!is.null(rv$cpabe_keys)) rv$cpabe_keys$mk
+            else stop("Generate an authority or upload its .master to issue keys.")
+      pk <- if (!is.null(input$cpabe_pk_up)) read_secret_bytes(input$cpabe_pk_up$datapath)
+            else if (!is.null(rv$cpabe_keys)) rv$cpabe_keys$pk
+            else stop("Also provide the authority .pub (generate or upload it).")
+      attrs <- .cpabe_split_attrs(input$cpabe_issue_attrs)
+      if (length(attrs) == 0) stop("Enter at least one attribute (comma-separated).")
+      sk <- native_cpabe_keygen(pk, mk, attrs)
+      rv$cpabe_issued <- list(sk = sk, attrs = attrs)
+      shiny::showNotification(
+        sprintf("Issued an attribute key for: %s. Download it below (SECRET — give it to that recipient).",
+                paste(attrs, collapse = ", ")), type = "warning", duration = 12)
+    }, error = function(e)
+      shiny::showNotification(paste("Issue failed:", conditionMessage(e)), type = "error"))
+  })
+
+  output$cpabe_issue_status <- shiny::renderUI({
+    if (is.null(rv$cpabe_issued)) return(NULL)
+    shiny::div(class = "alert alert-warning small py-2 mt-2",
+      shiny::HTML(sprintf(
+        "Attribute key ready for <code>%s</code>. It decrypts only files whose policy these attributes satisfy.",
+        paste(rv$cpabe_issued$attrs, collapse = ", "))),
+      shiny::div(class = "mt-2",
+        shiny::downloadButton("dl_cpabe_attr", "Download attribute key", class = "btn-outline-danger btn-sm")))
+  })
+
+  output$dl_cpabe_attr <- shiny::downloadHandler(
+    filename = function() sprintf("cpabe_attrkey_%s.txt",
+      gsub("[^A-Za-z0-9]+", "-", paste(rv$cpabe_issued$attrs, collapse = "_"))),
+    content  = function(file) writeLines(paste0(
+      "# shinyEncrypt CP-ABE ATTRIBUTE KEY (SECRET) for: ",
+      paste(rv$cpabe_issued$attrs, collapse = ", "), "\n",
+      "# Upload on the Decrypt tab to open files whose policy these attributes satisfy. hex(JSON):\n",
+      sodium::bin2hex(as_raw(rv$cpabe_issued$sk)), "\n"), file))
 
   # ---- Envelope signing (ML-DSA-65) ----
   # Only offered when the native backend actually exports the signature symbols.
@@ -312,6 +396,8 @@ app_server <- function(input, output, session) {
                                 as.integer(env$key_source$t %||% 2L), as.integer(env$key_source$n %||% 3L)),
       "timelock"      = sprintf("This artifact is TIME-LOCKED (sealed for ~%s) — solve the puzzle below, or supply the creator's master key.",
                                 .tl_human(env$key_source$target_seconds)),
+      "cpabe"         = sprintf("This artifact is CP-ABE encrypted under the policy %s — upload a matching attribute key below.",
+                                env$key_source$policy %||% "(unknown)"),
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
                sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
@@ -346,6 +432,18 @@ app_server <- function(input, output, session) {
       shiny::conditionalPanel(
         "input.tl_dec_mode == 'master'",
         shiny::fileInput("tl_master_up", "Creator master key (timelock_master.key.txt)")))
+  })
+
+  # CP-ABE: upload an attribute key; it opens the file only if its attributes
+  # satisfy the ciphertext's policy.
+  output$dec_cpabe_ui <- shiny::renderUI({
+    env <- tryCatch(dec_env(), error = function(e) NULL)
+    if (is.null(env) || !identical(env$key_source$type, "cpabe")) return(NULL)
+    shiny::tagList(
+      shiny::fileInput("dec_cpabe_key", "CP-ABE attribute key (cpabe_attrkey_*.txt)"),
+      shiny::helpText(class = "small text-muted",
+        sprintf("Policy: %s. Your attribute key opens the file only if its attributes satisfy this policy.",
+                env$key_source$policy %||% "(unknown)")))
   })
 
   # Optional signer-key pinning: shown only for signed artifacts. Uploading the
@@ -416,6 +514,10 @@ app_server <- function(input, output, session) {
                                  format(total, big.mark = ",", scientific = FALSE))))
           })
         }
+      } else if (t == "cpabe") {
+        if (is.null(input$dec_cpabe_key))
+          stop("This artifact needs a CP-ABE attribute key — upload it below.")
+        read_secret_bytes(input$dec_cpabe_key$datapath)
       } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
@@ -606,8 +708,10 @@ app_server <- function(input, output, session) {
   # not wake them until a tab change — which leaves the Encrypt tab blank after an
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
-               "pqc_key_status", "sign_ui", "sign_key_status", "dec_signature", "tl_estimate",
-               "dec_signpub_ui", "dec_shares_ui", "dec_timelock_ui", "dec_source_hint", "dec_summary", "dec_preview",
+               "pqc_key_status", "cpabe_key_status", "cpabe_issue_status",
+               "sign_ui", "sign_key_status", "dec_signature", "tl_estimate",
+               "dec_signpub_ui", "dec_shares_ui", "dec_timelock_ui", "dec_cpabe_ui",
+               "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
                "fpe_preview", "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)

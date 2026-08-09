@@ -57,6 +57,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_shamir_split"))  caps <- c(caps, "shamir")
     if (has("wrap__native_ff1_encrypt"))   caps <- c(caps, "fpe-ff1")
     if (has("wrap__native_timelock_generate")) caps <- c(caps, "tlock")
+    if (has("wrap__native_cpabe_setup"))   caps <- c(caps, "cp-abe")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -174,6 +175,39 @@ native_timelock_solve_steps <- function(x, N, steps) {
 native_timelock_calibrate <- function(bits = 2048L, millis = 300L) {
   .require_native()
   .Call("wrap__native_timelock_calibrate", as.integer(bits), as.integer(millis))
+}
+
+# ---- CP-ABE (BSW attribute-based encryption) -------------------------------
+# Authority setup. Returns list(pk, mk): the public key (encrypts under a policy,
+# shareable) and the master key (issues attribute keys — SECRET). Both are opaque
+# serde_json blobs (raw); the native layer packs them as [u32_be pk_len]||pk||mk.
+native_cpabe_setup <- function() {
+  .require_native()
+  out <- .Call("wrap__native_cpabe_setup")
+  pk_len <- readBin(as.raw(out[1:4]), "integer", n = 1L, size = 4L, endian = "big")
+  list(pk = out[(4L + 1L):(4L + pk_len)],
+       mk = out[(4L + pk_len + 1L):length(out)])
+}
+
+# Issue an attribute secret key for `attrs` (character vector) from the authority.
+# Returns the key as a raw serde_json blob (SECRET, for one recipient).
+native_cpabe_keygen <- function(pk, mk, attrs) {
+  .require_native()
+  .Call("wrap__native_cpabe_keygen", as_raw(pk), as_raw(mk), as.character(attrs))
+}
+
+# Seal `plaintext` (raw) under a boolean `policy` string. Returns the ciphertext
+# as a raw serde_json blob.
+native_cpabe_encrypt <- function(pk, policy, plaintext) {
+  .require_native()
+  .Call("wrap__native_cpabe_encrypt", as_raw(pk), as.character(policy)[1], as_raw(plaintext))
+}
+
+# Recover the sealed bytes if the attribute key `sk` satisfies the ciphertext's
+# policy; errors (fails closed) otherwise. Both args are raw serde_json blobs.
+native_cpabe_decrypt <- function(sk, ct) {
+  .require_native()
+  .Call("wrap__native_cpabe_decrypt", as_raw(sk), as_raw(ct))
 }
 
 native_backends_status <- function() {

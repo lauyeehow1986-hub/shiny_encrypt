@@ -23,6 +23,12 @@
      machine and sizes the puzzle. No key file is produced — *time is the key* — and decrypting
      means recomputing the answer through millions of sequential squarings. Optionally keep a
      creator **master key** to skip the wait yourself; off = a true time-lock for everyone.
+   - **Attribute policy (CP-ABE)** *(native)*: a fresh key is sealed under a boolean **policy** over
+     attributes — `"cardiology" and ("senior" or "admin")`. Generate (or upload) an **authority**:
+     a `.pub` that encrypts under a policy and a SECRET `.master` that issues per-recipient
+     **attribute keys**. Anyone whose attribute key *satisfies* the policy can decrypt; others fail
+     closed. Role-based access with no per-recipient key exchange — but the master mints any key, so
+     guard it like a CA root.
 4. **Pick a scheme & parameters** — Core AEAD (**XSalsa20-Poly1305** or **AES-256-GCM**) works
    now. Leave nonce/IV blank for a fresh random value, or set it (hex) for reproducible output.
    Optionally tick **Sign this envelope (ML-DSA-65)** *(native)* to attach a post-quantum signature;
@@ -34,7 +40,8 @@
 7. **Decrypt (reverse tab)** — upload a `.txt` or `.R` artifact, supply the matching
    passphrase / free-text / key file / **PQC secret** / **any t Shamir shares** / **solved
    time-lock** (the tab solves the puzzle for you, with a progress bar, or takes the creator's
-   master key), and decrypt. The integrity digest is verified, then you can download the original
+   master key) / **CP-ABE attribute key** (decrypts only if its attributes satisfy the policy),
+   and decrypt. The integrity digest is verified, then you can download the original
    binary (or re-materialize CSV/XLSX). Any signature is verified automatically; paste an
    **expected signer** key/fingerprint to *pin* who signed it (green = authenticated, amber =
    valid but unpinned, red = mismatch).
@@ -69,11 +76,12 @@ their format.
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
   `openssl` installed, and the embedded envelope is parsed as **data** — nothing in the
   uploaded artifact is executed. Artifacts that use a **native** key source (Argon2id, PQC
-  hybrid, Shamir) decrypt through the installed package instead, since they need the Rust backend.
+  hybrid, Shamir, time-lock, CP-ABE) decrypt through the installed package instead, since they need
+  the Rust backend.
 - Every envelope is **versioned** and self-describing (scheme, params, salt, key-source
   description, integrity digest), so it stays decryptable as defaults evolve.
-- The **native** features (Argon2id, PQC hybrid KEM, ML-DSA signing, Shamir custody, time-lock)
-  appear only when the Rust backend is built and staged; the app probes the loaded library at
+- The **native** features (Argon2id, PQC hybrid KEM, ML-DSA signing, Shamir custody, time-lock,
+  CP-ABE) appear only when the Rust backend is built and staged; the app probes the loaded library at
   startup and offers just what it can run. A pinned signature only *authenticates* a signer if you
   compare the fingerprint out-of-band — a valid-but-unpinned signature proves integrity, not identity.
 - The **time-lock** delay is a compute cost, not a wall-clock guarantee: it depends on the solver's
@@ -82,4 +90,10 @@ their format.
   RSA modulus being hard *and* on there being no shortcut to the repeated squaring without the
   (destroyed) trapdoor. For a delay tied to real calendar time instead, a beacon scheme like drand
   `tlock` would be needed — but that requires network access, which this offline tool avoids.
+- **CP-ABE** is access *control*, not distributed *trust*: a single authority holds the master key
+  and can mint an attribute key for any attribute set, so it can decrypt anything — guard the
+  `.master` like a certificate-authority root. Attribute strings are matched exactly (case- and
+  spelling-sensitive), and the policy is stored in the envelope in clear (it describes *who* may
+  decrypt, not a secret). Revocation is not built in: to cut off a holder you must re-key and
+  re-encrypt under a fresh authority.
 - **Not for diagnosis or clinical decision-making.** You are responsible for key custody.

@@ -25,7 +25,8 @@ existing **RDS / binary**) into a serialized, Base64-encoded payload, protects i
 | **Shamir t-of-n** key custody | ✅ working when native backend built |
 | **FF1 format-preserving** column de-identification | ✅ working when native backend built |
 | **Time-lock** key source (RSW sequential-squaring puzzle) | ✅ working when native backend built |
-| CP-ABE, PRE | ⛏ native crate (Phase 5) |
+| **CP-ABE** attribute-policy key source (BSW) | ✅ working when native backend built |
+| IBE, PRE | ⛏ native crate (Phase 5) |
 | FHE (TFHE), ZK proofs, PSI/OPAQUE/FROST | ⛏ native, size-guarded (Phase 6) |
 | FE / Witness / iO / general-MPC / RBE / UE | 🚫 no secure impl — documented stubs |
 
@@ -73,6 +74,8 @@ Once the native backend is built and staged (`tools/build_native.R` → `inst/li
 - **FF1 format-preserving de-identification** — a separate **De-identify (FPE)** tab (not the envelope flow). FF1 (NIST SP 800-38G) tokenises chosen table columns while keeping each field's **exact length and character class** — `0012345` → `0847213`, `AB-1234-CD` → `ZK-8071-MR` (delimiters pass through in place). It's deterministic, so equal values map to equal tokens and joins survive; alphabets are auto-detected per column (radix 10/36/62) and overridable. Output is a de-identified CSV plus a secret `.fpekit` (key + recipe) that reverses it exactly. Deterministic FPE is **pseudonymisation, not anonymisation** — it hides identifier content but preserves value frequencies and linkage; the tab states this plainly.
 
 - **Time-lock key source** — an **RSW sequential-squaring puzzle** (Rivest–Shamir–Wagner) that seals a fresh random data key behind a chosen delay. Offered as the **Time-lock** key source on the Encrypt tab: pick a delay (seconds → days), the app calibrates this machine's squaring rate and sizes the puzzle. It is fully **offline** and self-contained — no key file is produced, and the RSA trapdoor is destroyed at seal time, so **time itself is the key**. To decrypt, the Decrypt tab recomputes the answer by *T* sequential modular squarings, showing a live progress bar. The delay is **approximate**: it cannot be parallelised away (each squaring depends on the last), but a faster single core solves sooner. An optional creator **master key** (the puzzle solution) can be kept to skip the wait; leaving it off is a true time-lock.
+
+- **CP-ABE attribute-policy key source** — **ciphertext-policy attribute-based encryption** (Bethencourt–Sahai–Waters, via the `rabe` crate) seals the data key under a boolean **policy** over attributes, e.g. `"cardiology" and ("senior" or "admin")`. Offered as the **Attribute policy (CP-ABE)** key source on the Encrypt tab: generate (or upload) an **authority** — a public key that encrypts under a policy and a SECRET **master** that issues per-recipient **attribute keys**. A ciphertext opens for any attribute key whose set **satisfies** the policy — role-based access without a per-recipient key exchange or an online server. Non-satisfying keys **fail closed** (they error, and the sealed key is AEAD-protected inside the ABE ciphertext as well). This is access *control*, not multi-authority trust: whoever holds the master can mint any attribute key, so guard it like a CA root.
 
 Each is capability-gated: the app only shows a feature after probing that the loaded library actually exports it, so an older DLL never advertises something it can't do. Enabling a newly-built feature needs an app restart (the running app locks the staged DLL).
 

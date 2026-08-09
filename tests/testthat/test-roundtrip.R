@@ -275,6 +275,52 @@ test_that("time-lock without a master keeps no shortcut (true time-lock)", {
   expect_identical(se_decrypt(env_rt, b), payload) # only the solved puzzle opens it
 })
 
+test_that("native CP-ABE (if built): a policy-satisfying key decrypts, others fail closed", {
+  skip_if_not(crypto_backend_available("cp-abe"), "native CP-ABE backend not built")
+  auth <- native_cpabe_setup()
+  expect_true(length(auth$pk) > 0 && length(auth$mk) > 0)
+  datakey <- sodium::random(32L)
+  policy  <- "\"cardiology\" and \"senior\""
+  ct <- native_cpabe_encrypt(auth$pk, policy, datakey)
+
+  # a key holding both required attributes recovers the exact sealed bytes
+  good <- native_cpabe_keygen(auth$pk, auth$mk, c("cardiology", "senior"))
+  expect_identical(native_cpabe_decrypt(good, ct), as.raw(datakey))
+
+  # missing one required attribute -> error (fails closed, not garbage)
+  short <- native_cpabe_keygen(auth$pk, auth$mk, "cardiology")
+  expect_error(native_cpabe_decrypt(short, ct))
+  # unrelated attributes -> error
+  other <- native_cpabe_keygen(auth$pk, auth$mk, c("radiology", "junior"))
+  expect_error(native_cpabe_decrypt(other, ct))
+  # degenerate inputs are rejected
+  expect_error(native_cpabe_keygen(auth$pk, auth$mk, character()))
+  expect_error(native_cpabe_encrypt(auth$pk, "", datakey))
+})
+
+test_that("CP-ABE key source (if built) seals under a policy; attribute keys gate decryption", {
+  skip_if_not(crypto_backend_available("cp-abe"), "native CP-ABE backend not built")
+  auth   <- native_cpabe_setup()
+  policy <- "\"cardiology\" and (\"senior\" or \"admin\")"
+  kr <- resolve_key(list(type = "cpabe", pk = auth$pk, policy = policy))
+  expect_identical(kr$source_meta$type, "cpabe")
+  expect_identical(kr$source_meta$policy, policy)
+  expect_null(kr$key_export)                       # no key file — an attribute key opens it
+  expect_true(nchar(kr$source_meta$ct) > 0)
+
+  env    <- se_encrypt(payload, "aead-aesgcm", kr, meta = list(orig_name = "abe.bin"))
+  env_rt <- envelope_parse(build_txt_export(env))
+
+  # {cardiology, admin} satisfies "cardiology AND (senior OR admin)" -> decrypts
+  ok <- native_cpabe_keygen(auth$pk, auth$mk, c("cardiology", "admin"))
+  expect_identical(se_decrypt(env_rt, ok), payload)
+  # a key missing the required "cardiology" cannot (fails closed)
+  no <- native_cpabe_keygen(auth$pk, auth$mk, c("senior", "admin"))
+  expect_error(se_decrypt(env_rt, no))
+  # a blank policy is rejected at seal time
+  expect_error(resolve_key(list(type = "cpabe", pk = auth$pk, policy = "   ")))
+})
+
 test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on the build", {
   s <- list_schemes()
   expect_true(all(c("Core","Native","Heavy","Interactive","Stub") %in% s$tier))
@@ -290,4 +336,6 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("fpe-ff1"))
   expect_equal("tlock" %in% s$id[s$available],
                crypto_backend_available("tlock"))
+  expect_equal("cp-abe" %in% s$id[s$available],
+               crypto_backend_available("cp-abe"))
 })

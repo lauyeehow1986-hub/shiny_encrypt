@@ -32,6 +32,9 @@ use fpe::ff1::{FlexibleNumeralString, FF1};
 
 use num_bigint_dig::{BigUint, RandPrime};
 
+use rabe::schemes::bsw;
+use rabe::utils::policy::pest::PolicyLanguage;
+
 // ---- fixed lengths (bytes) --------------------------------------------------
 const X_SK: usize = 32;   // X25519 secret
 const X_PK: usize = 32;   // X25519 public
@@ -440,6 +443,88 @@ fn native_timelock_calibrate(bits: i32, millis: i32) -> std::result::Result<f64,
 }
 
 // ============================================================================
+// Attribute-Based Encryption (CP-ABE, BSW ciphertext-policy scheme).
+//
+// A dataset key is sealed under a boolean POLICY over attributes (e.g.
+// `"cardiology" and ("senior" or "admin")`). An authority holds (PK, MK); it
+// issues per-recipient ATTRIBUTE keys from MK. A ciphertext opens only for a key
+// whose attribute set satisfies the policy — role-based access without a
+// per-recipient key exchange. Decryption of a non-satisfying key errors (fails
+// closed), and the sealed bytes are additionally AEAD-protected inside rabe.
+//
+// FFI: keys and ciphertexts cross as serde_json byte blobs (opaque to R). setup
+// returns [u32_be pk_len] || pk_json || mk_json so R can split the public part
+// (shareable) from the master (secret).
+// ============================================================================
+
+fn cpabe_prefix(pk: &[u8], mk: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + pk.len() + mk.len());
+    out.extend_from_slice(&(pk.len() as u32).to_be_bytes());
+    out.extend_from_slice(pk);
+    out.extend_from_slice(mk);
+    out
+}
+
+/// CP-ABE (BSW) authority setup. Returns [u32_be pk_len] || pk_json || mk_json:
+/// the public key (encrypts under a policy) and the master key (issues attribute
+/// keys — SECRET). R splits on pk_len.
+#[extendr]
+fn native_cpabe_setup() -> std::result::Result<Vec<u8>, String> {
+    let (pk, mk) = bsw::setup();
+    let pk_b = serde_json::to_vec(&pk).map_err(|e| format!("cpabe: serialize pk: {e}"))?;
+    let mk_b = serde_json::to_vec(&mk).map_err(|e| format!("cpabe: serialize mk: {e}"))?;
+    Ok(cpabe_prefix(&pk_b, &mk_b))
+}
+
+/// Issue an attribute secret key for `attrs` from the authority (pk_json, mk_json).
+/// Returns the key as a serde_json blob (SECRET — give it to one recipient).
+#[extendr]
+fn native_cpabe_keygen(
+    pk: &[u8],
+    mk: &[u8],
+    attrs: Vec<String>,
+) -> std::result::Result<Vec<u8>, String> {
+    if attrs.is_empty() {
+        return Err("cpabe: attribute set must be non-empty".to_string());
+    }
+    let pk: bsw::CpAbePublicKey =
+        serde_json::from_slice(pk).map_err(|e| format!("cpabe: parse public key: {e}"))?;
+    let mk: bsw::CpAbeMasterKey =
+        serde_json::from_slice(mk).map_err(|e| format!("cpabe: parse master key: {e}"))?;
+    let refs: Vec<&str> = attrs.iter().map(|s| s.as_str()).collect();
+    let sk = bsw::keygen(&pk, &mk, &refs)
+        .ok_or_else(|| "cpabe: keygen failed (empty/invalid attribute set)".to_string())?;
+    serde_json::to_vec(&sk).map_err(|e| format!("cpabe: serialize attribute key: {e}"))
+}
+
+/// Seal `plaintext` (a data key) under a boolean `policy` in human syntax
+/// (e.g. `"a" and ("b" or "c")`). Returns the ciphertext as a serde_json blob.
+#[extendr]
+fn native_cpabe_encrypt(
+    pk: &[u8],
+    policy: &str,
+    plaintext: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    let pk: bsw::CpAbePublicKey =
+        serde_json::from_slice(pk).map_err(|e| format!("cpabe: parse public key: {e}"))?;
+    let ct = bsw::encrypt(&pk, policy, PolicyLanguage::HumanPolicy, plaintext)
+        .map_err(|e| format!("cpabe: encrypt failed (check policy syntax): {e:?}"))?;
+    serde_json::to_vec(&ct).map_err(|e| format!("cpabe: serialize ciphertext: {e}"))
+}
+
+/// Recover the sealed bytes if the attribute key `sk` satisfies the ciphertext's
+/// policy; errors (fails closed) otherwise. `sk` and `ct` are serde_json blobs.
+#[extendr]
+fn native_cpabe_decrypt(sk: &[u8], ct: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    let sk: bsw::CpAbeSecretKey =
+        serde_json::from_slice(sk).map_err(|e| format!("cpabe: parse attribute key: {e}"))?;
+    let ct: bsw::CpAbeCiphertext =
+        serde_json::from_slice(ct).map_err(|e| format!("cpabe: parse ciphertext: {e}"))?;
+    bsw::decrypt(&sk, &ct)
+        .map_err(|e| format!("cpabe: attributes do not satisfy the policy: {e:?}"))
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -463,5 +548,9 @@ extendr_module! {
     fn native_timelock_generate;
     fn native_timelock_solve_steps;
     fn native_timelock_calibrate;
+    fn native_cpabe_setup;
+    fn native_cpabe_keygen;
+    fn native_cpabe_encrypt;
+    fn native_cpabe_decrypt;
     fn native_backend_version;
 }

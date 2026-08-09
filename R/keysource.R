@@ -7,7 +7,7 @@
 # Decryption side: resolve_key_for_decrypt(source_meta, salt_hex, secret).
 
 KEY_SOURCES <- c("random", "passphrase", "freetext_hash", "keyfile", "hybrid_pqc",
-                 "shamir", "timelock")
+                 "shamir", "timelock", "cpabe")
 
 resolve_key <- function(spec) {
   type <- match.arg(spec$type %||% "random", KEY_SOURCES)
@@ -85,6 +85,19 @@ resolve_key <- function(spec) {
            key_export = NULL,          # no key file — solving the puzzle IS the key
            # trapdoor destroyed here; keep b only if the creator wants an instant unlock
            timelock_master = if (isTRUE(spec$keep_master)) puz$b else NULL)
+    },
+    "cpabe" = {
+      key    <- as.raw(spec$key %||% sodium::random(32L))
+      pk     <- as_raw(spec$pk %||%
+                  stop("CP-ABE: generate or upload an authority public key first."))
+      policy <- spec$policy %||% ""
+      if (!nzchar(trimws(policy)))
+        stop("CP-ABE: enter an access policy, e.g. \"cardiology\" and \"senior\".")
+      ct <- native_cpabe_encrypt(pk, policy, key)   # seals the data key under the policy
+      list(key = key, salt = NULL,
+           source_meta = list(type = "cpabe", alg = "bsw-cpabe",
+                              policy = policy, ct = raw_to_base64(ct)),
+           key_export = NULL)   # recipients decrypt with an attribute key, not a key file
     }
   )
 }
@@ -120,6 +133,13 @@ resolve_key_for_decrypt <- function(source_meta, salt_hex, secret) {
       masked <- base64_to_raw(source_meta$masked_key %||%
                                stop("Artifact is missing its time-lock masked key."))
       .tl_xor(masked, timelock_mask(as_raw(secret)))
+    },
+    "cpabe" = {
+      # `secret` is a CP-ABE attribute key; native decrypt returns the data key
+      # only if its attributes satisfy the policy, else errors (fails closed).
+      ct <- base64_to_raw(source_meta$ct %||%
+                            stop("Artifact is missing its CP-ABE ciphertext."))
+      native_cpabe_decrypt(as_raw(secret), ct)
     },
     stop(sprintf("Unknown key source: %s", type))
   )

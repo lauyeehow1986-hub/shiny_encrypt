@@ -36,3 +36,7 @@ aes = "0.8"
 # Time-lock puzzle (RSW sequential squaring): big integers + prime generation.
 num-bigint-dig = { version = "0.8", features = ["prime", "rand"] }
 rand = "0.8"
+# Attribute-Based Encryption (CP-ABE, BSW scheme). Pure Rust: rabe-bn pairing +
+# aes-gcm + sha3 + pest, no C deps. serde is on by default (keys/ct serialize).
+rabe = "0.4"
+serde_json = "1.0"

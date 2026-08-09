@@ -43,6 +43,30 @@ Sys.setenv(
   CARGO_TARGET_DIR = cargo_td
 )
 
+# ---- Rtools link shim for cdylib dependencies (e.g. rabe / CP-ABE) ----------
+# Most deps are pure rlibs and never link, but some (rabe) declare a cdylib
+# crate-type, so cargo links a DLL for them. Two Rtools45 quirks must be bridged:
+#   (1) the gnu target's default linker name `x86_64-w64-mingw32-gcc` does not
+#       exist in Rtools (it ships `gcc.exe`) -> name the linker explicitly;
+#   (2) Rtools45 GCC 14 folded the EH runtime into libgcc.a and ships no
+#       libgcc_eh.a, yet rustc still passes `-lgcc_eh`. An EMPTY libgcc_eh.a on
+#       the search path satisfies the flag (real symbols come from -lgcc later).
+# Harmless for the rlib-only path: no link happens there, so these are no-ops.
+gnu_gcc <- "C:/rtools45/x86_64-w64-mingw32.static.posix/bin/gcc.exe"
+if (file.exists(gnu_gcc)) {
+  Sys.setenv(CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = gnu_gcc)
+  shim_dir <- file.path(cargo_td, "gcceh_shim")
+  dir.create(shim_dir, recursive = TRUE, showWarnings = FALSE)
+  shim_lib <- file.path(shim_dir, "libgcc_eh.a")
+  if (!file.exists(shim_lib)) {
+    ar <- Sys.which("ar")
+    if (!nzchar(ar)) ar <- "C:/rtools45/x86_64-w64-mingw32.static.posix/bin/ar.exe"
+    system2(ar, c("rcs", shQuote(shim_lib)))   # create an empty archive
+  }
+  Sys.setenv(RUSTFLAGS = trimws(paste(Sys.getenv("RUSTFLAGS"),
+                                      paste0("-L native=", shim_dir))))
+}
+
 cargo <- Sys.which("cargo")
 if (!nzchar(cargo)) stop("cargo not found on PATH (expected in ~/.cargo/bin).")
 message("cargo:  ", cargo)
