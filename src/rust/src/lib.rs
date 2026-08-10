@@ -1640,6 +1640,287 @@ fn native_frost_verify(
 }
 
 // ============================================================================
+// Zero-knowledge range proof (Pedersen commitment + Chaum-Pedersen bit-OR).
+//
+// A prover convinces a verifier that a *hidden* value v lies in a public range
+// [min, max] without revealing v. Self-contained on ristretto255 (reuses the
+// OPRF group, no new dependency): no trusted setup, transparent, non-interactive
+// via Fiat-Shamir. Construction (classic pre-Bulletproofs range proof):
+//
+//   * Second generator H = hash-to-group(DST), independent of the basepoint G.
+//   * Commit a = v - min as a Pedersen commitment C_a = a*G + r_a*H.
+//   * n = bit length of (max - min). Prove a in [0, 2^n) by committing each bit
+//     b_i (C_i = b_i*G + s_i*H, with sum 2^i*s_i = r_a so sum 2^i*C_i = C_a) and
+//     giving a Chaum-Pedersen OR proof that each C_i opens to 0 OR 1.
+//   * Also prove b = (max - min) - a in [0, 2^n) against C_b = (max-min)*G - C_a.
+//     a >= 0 and b >= 0 with a + b = (max-min) forces a in [0, max-min], i.e.
+//     v in [min, max]. Both proofs bind to the same commitment C_a.
+//
+// A false statement cannot be proved (prove() fails closed); tampering with any
+// field makes verify() reject. Self-consistent DSTs — not wire-compatible with
+// other range-proof suites.
+
+const ZK_DST_GEN: &[u8] = b"shinyEncrypt-ZK-ristretto255-v1-Generator";
+const ZK_DST_CHAL: &[u8] = b"shinyEncrypt-ZK-ristretto255-v1-Challenge";
+const ZK_BIT_BYTES: usize = 160; // C_i(32) || c0(32) || c1(32) || z0(32) || z1(32)
+const ZK_HEADER: usize = 50; // version(1) || n(1) || min(8) || max(8) || C_a(32)
+
+// A nothing-up-my-sleeve second generator, independent of the basepoint.
+fn zk_generator_h() -> RistrettoPoint {
+    let mut h = Sha512::new();
+    h.update(ZK_DST_GEN);
+    h.update((1u64).to_be_bytes());
+    h.update(b"H");
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    RistrettoPoint::from_uniform_bytes(&wide)
+}
+
+// Fiat-Shamir challenge over length-prefixed parts (unambiguous concatenation).
+fn zk_hash_to_scalar(parts: &[&[u8]]) -> Scalar {
+    let mut h = Sha512::new();
+    h.update(ZK_DST_CHAL);
+    for p in parts {
+        h.update((p.len() as u64).to_be_bytes());
+        h.update(p);
+    }
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    Scalar::from_bytes_mod_order_wide(&wide)
+}
+
+// [2^0, 2^1, ..., 2^(n-1)] as scalars.
+fn zk_two_pows(n: usize) -> Vec<Scalar> {
+    let two = Scalar::from(2u64);
+    let mut v = Vec::with_capacity(n);
+    let mut cur = Scalar::ONE;
+    for _ in 0..n {
+        v.push(cur);
+        cur *= two;
+    }
+    v
+}
+
+fn zk_u64(b: &[u8], what: &str) -> std::result::Result<u64, String> {
+    if b.len() != 8 {
+        return Err(format!("zk: {what} must be 8 bytes (u64 little-endian)"));
+    }
+    let mut a = [0u8; 8];
+    a.copy_from_slice(b);
+    Ok(u64::from_le_bytes(a))
+}
+
+// Prove a committed value w (= sum of n bits) lies in [0, 2^n): one bit
+// commitment + one Chaum-Pedersen OR proof (b_i is 0 or 1) per bit. `r_w` is the
+// blinding of the aggregate commitment C_w = w*G + r_w*H; the per-bit blindings
+// are chosen so that sum 2^i * C_i == C_w. `tag`/`ctx` bind the proof to the
+// statement so the two halves (a, b) cannot be swapped.
+fn zk_prove_bits(w: u64, r_w: Scalar, n: usize, tag: &[u8], ctx: &[u8]) -> Vec<u8> {
+    let g = RISTRETTO_BASEPOINT_POINT;
+    let h = zk_generator_h();
+    let two_pow = zk_two_pows(n);
+
+    // Per-bit blindings s_i with sum 2^i * s_i == r_w: pick the first n-1 at
+    // random and solve the last one.
+    let mut s: Vec<Scalar> = (0..n).map(|_| oprf_rand_scalar()).collect();
+    let mut partial = Scalar::ZERO;
+    for i in 0..(n - 1) {
+        partial += two_pow[i] * s[i];
+    }
+    s[n - 1] = (r_w - partial) * two_pow[n - 1].invert();
+
+    let mut out = Vec::with_capacity(n * ZK_BIT_BYTES);
+    for i in 0..n {
+        let bit = (w >> i) & 1;
+        let c_i = if bit == 1 { g + h * s[i] } else { h * s[i] };
+        let c_i_c = c_i.compress();
+        let p0 = c_i; // opens to 0  =>  == s_i*H
+        let p1 = c_i - g; // opens to 1  =>  == s_i*H
+
+        // Non-interactive Chaum-Pedersen OR: real Schnorr on the true branch,
+        // simulated on the false branch; challenges sum to the Fiat-Shamir hash.
+        let (c0, c1, z0, z1);
+        if bit == 0 {
+            let k = oprf_rand_scalar();
+            let a0 = h * k; // real (branch 0)
+            let sc1 = oprf_rand_scalar(); // simulated challenge (branch 1)
+            let sz1 = oprf_rand_scalar(); // simulated response (branch 1)
+            let a1 = h * sz1 - p1 * sc1;
+            let a0c = a0.compress();
+            let a1c = a1.compress();
+            let c = zk_hash_to_scalar(&[
+                ctx, tag, &(i as u64).to_be_bytes(),
+                c_i_c.as_bytes(), a0c.as_bytes(), a1c.as_bytes(),
+            ]);
+            let rc0 = c - sc1;
+            let rz0 = k + rc0 * s[i];
+            c0 = rc0; c1 = sc1; z0 = rz0; z1 = sz1;
+        } else {
+            let k = oprf_rand_scalar();
+            let a1 = h * k; // real (branch 1)
+            let sc0 = oprf_rand_scalar(); // simulated challenge (branch 0)
+            let sz0 = oprf_rand_scalar(); // simulated response (branch 0)
+            let a0 = h * sz0 - p0 * sc0;
+            let a0c = a0.compress();
+            let a1c = a1.compress();
+            let c = zk_hash_to_scalar(&[
+                ctx, tag, &(i as u64).to_be_bytes(),
+                c_i_c.as_bytes(), a0c.as_bytes(), a1c.as_bytes(),
+            ]);
+            let rc1 = c - sc0;
+            let rz1 = k + rc1 * s[i];
+            c0 = sc0; c1 = rc1; z0 = sz0; z1 = rz1;
+        }
+
+        out.extend_from_slice(c_i_c.as_bytes());
+        out.extend_from_slice(c0.as_bytes());
+        out.extend_from_slice(c1.as_bytes());
+        out.extend_from_slice(z0.as_bytes());
+        out.extend_from_slice(z1.as_bytes());
+    }
+    out
+}
+
+// Verify an n-bit range proof against the expected aggregate commitment.
+fn zk_verify_bits(
+    blob: &[u8], n: usize, tag: &[u8], ctx: &[u8], c_expected: &RistrettoPoint,
+) -> std::result::Result<bool, String> {
+    if blob.len() != n * ZK_BIT_BYTES {
+        return Err("zk: malformed bit-proof length".into());
+    }
+    let g = RISTRETTO_BASEPOINT_POINT;
+    let h = zk_generator_h();
+    let two_pow = zk_two_pows(n);
+    let mut acc = RistrettoPoint::identity();
+    for i in 0..n {
+        let base = i * ZK_BIT_BYTES;
+        let c_i = oprf_point_from(&blob[base..base + 32], "bit commitment")?;
+        let c0 = oprf_scalar_from(&blob[base + 32..base + 64], "c0")?;
+        let c1 = oprf_scalar_from(&blob[base + 64..base + 96], "c1")?;
+        let z0 = oprf_scalar_from(&blob[base + 96..base + 128], "z0")?;
+        let z1 = oprf_scalar_from(&blob[base + 128..base + 160], "z1")?;
+        let p0 = c_i;
+        let p1 = c_i - g;
+        let a0 = h * z0 - p0 * c0;
+        let a1 = h * z1 - p1 * c1;
+        let a0c = a0.compress();
+        let a1c = a1.compress();
+        let c = zk_hash_to_scalar(&[
+            ctx, tag, &(i as u64).to_be_bytes(),
+            c_i.compress().as_bytes(), a0c.as_bytes(), a1c.as_bytes(),
+        ]);
+        if c != c0 + c1 {
+            return Ok(false);
+        }
+        acc += c_i * two_pow[i];
+    }
+    Ok(acc == *c_expected)
+}
+
+/// Prove that a hidden value lies in [min, max]. Inputs are 8-byte little-endian
+/// u64. Returns a self-describing proof blob (the value is NOT recoverable from
+/// it). Fails closed if value is outside [min, max] — a false statement cannot
+/// be proved.
+#[extendr]
+fn native_zk_range_prove(
+    value: &[u8], min_bytes: &[u8], max_bytes: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    let v = zk_u64(value, "value")?;
+    let lo = zk_u64(min_bytes, "min")?;
+    let hi = zk_u64(max_bytes, "max")?;
+    if hi < lo {
+        return Err("zk: max must be >= min".into());
+    }
+    if v < lo || v > hi {
+        return Err("zk: value is outside [min, max]".into());
+    }
+    let range = hi - lo;
+    let n = if range == 0 { 1 } else { 64 - range.leading_zeros() as usize };
+
+    let g = RISTRETTO_BASEPOINT_POINT;
+    let h = zk_generator_h();
+    let a = v - lo;
+    let r_a = oprf_rand_scalar();
+    let c_a = g * Scalar::from(a) + h * r_a;
+    let c_a_c = c_a.compress();
+
+    // Statement context binds the bounds and the revealed commitment.
+    let mut ctx = Vec::with_capacity(48);
+    ctx.extend_from_slice(&lo.to_be_bytes());
+    ctx.extend_from_slice(&hi.to_be_bytes());
+    ctx.extend_from_slice(c_a_c.as_bytes());
+
+    let bits_a = zk_prove_bits(a, r_a, n, b"A", &ctx);
+    let b = range - a;
+    let r_b = -r_a; // C_b = range*G - C_a  =>  blinding is -r_a
+    let bits_b = zk_prove_bits(b, r_b, n, b"B", &ctx);
+
+    let mut out = Vec::with_capacity(ZK_HEADER + bits_a.len() + bits_b.len());
+    out.push(1u8); // version
+    out.push(n as u8);
+    out.extend_from_slice(&lo.to_be_bytes());
+    out.extend_from_slice(&hi.to_be_bytes());
+    out.extend_from_slice(c_a_c.as_bytes());
+    out.extend_from_slice(&bits_a);
+    out.extend_from_slice(&bits_b);
+    Ok(out)
+}
+
+/// Verify a range proof. Returns 1 if it proves the hidden value lies in the
+/// [min, max] embedded in the proof, else 0; errors only on malformed input.
+#[extendr]
+fn native_zk_range_verify(proof: &[u8]) -> std::result::Result<i32, String> {
+    if proof.len() < ZK_HEADER {
+        return Err("zk: proof too short".into());
+    }
+    if proof[0] != 1 {
+        return Err("zk: unsupported proof version".into());
+    }
+    let n = proof[1] as usize;
+    if n < 1 || n > 64 {
+        return Err("zk: invalid bit width".into());
+    }
+    if proof.len() != ZK_HEADER + 2 * n * ZK_BIT_BYTES {
+        return Err("zk: proof length mismatch".into());
+    }
+    let mut a = [0u8; 8];
+    a.copy_from_slice(&proof[2..10]);
+    let lo = u64::from_be_bytes(a);
+    a.copy_from_slice(&proof[10..18]);
+    let hi = u64::from_be_bytes(a);
+    if hi < lo {
+        return Err("zk: max < min".into());
+    }
+    let range = hi - lo;
+    // The bit width must match the range exactly, so the two-sided proof pins
+    // the value to [min, max] with no slack.
+    let need_n = if range == 0 { 1 } else { 64 - range.leading_zeros() as usize };
+    if n != need_n {
+        return Ok(0);
+    }
+
+    let g = RISTRETTO_BASEPOINT_POINT;
+    let c_a = oprf_point_from(&proof[18..50], "range commitment")?;
+    let mut ctx = Vec::with_capacity(48);
+    ctx.extend_from_slice(&lo.to_be_bytes());
+    ctx.extend_from_slice(&hi.to_be_bytes());
+    ctx.extend_from_slice(&proof[18..50]);
+
+    let split = ZK_HEADER + n * ZK_BIT_BYTES;
+    let bits_a = &proof[ZK_HEADER..split];
+    let bits_b = &proof[split..ZK_HEADER + 2 * n * ZK_BIT_BYTES];
+
+    if !zk_verify_bits(bits_a, n, b"A", &ctx, &c_a)? {
+        return Ok(0);
+    }
+    let c_b = g * Scalar::from(range) - c_a;
+    if !zk_verify_bits(bits_b, n, b"B", &ctx, &c_b)? {
+        return Ok(0);
+    }
+    Ok(1)
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -1691,5 +1972,7 @@ extendr_module! {
     fn native_frost_sign;
     fn native_frost_aggregate;
     fn native_frost_verify;
+    fn native_zk_range_prove;
+    fn native_zk_range_verify;
     fn native_backend_version;
 }

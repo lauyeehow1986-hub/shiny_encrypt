@@ -8,7 +8,7 @@
 # Names of capabilities provided by the native package (Phase 4+).
 NATIVE_CAPS <- c(
   "argon2id", "ml-kem", "ml-dsa", "slh-dsa", "fn-dsa", "hpke-hybrid",
-  "cp-abe", "ibe", "fpe-ff1", "tlock", "shamir", "frost",
+  "cp-abe", "ibe", "fpe-ff1", "tlock", "shamir", "frost", "zk-range",
   "tfhe", "zk-stark", "psi", "oprf", "opaque", "sse-native"
 )  # NB: "pre" is NOT here -- Proxy Re-Encryption lives in the optional GPL
    # companion package shinyEncryptPRE, not the MIT core's native backend.
@@ -64,6 +64,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_psi_keygen"))    caps <- c(caps, "psi")
     if (has("wrap__native_opaque_server_setup")) caps <- c(caps, "opaque")
     if (has("wrap__native_frost_keygen"))  caps <- c(caps, "frost")
+    if (has("wrap__native_zk_range_prove")) caps <- c(caps, "zk-range")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -417,6 +418,21 @@ native_frost_verify <- function(group_pk, msg, signature) {
   .require_native()
   identical(.Call("wrap__native_frost_verify", as_raw(group_pk), as_raw(msg),
                   as_raw(signature)), 1L)
+}
+
+# ---- Zero-knowledge range proof (Pedersen + Chaum-Pedersen, ristretto255) ----
+# Prove a hidden value lies in [min, max] without revealing it. value/min/max are
+# 8-byte little-endian raw u64 (see .zk_u64le in R/zk.R). The proof blob does not
+# contain the value; a false statement cannot be proved (fails closed).
+native_zk_range_prove <- function(value, min_bytes, max_bytes) {
+  .require_native()
+  .Call("wrap__native_zk_range_prove", as_raw(value), as_raw(min_bytes), as_raw(max_bytes))
+}
+
+# Verify a range proof. Returns TRUE/FALSE; errors only on a malformed blob.
+native_zk_range_verify <- function(proof) {
+  .require_native()
+  identical(.Call("wrap__native_zk_range_verify", as_raw(proof)), 1L)
 }
 
 native_backends_status <- function() {

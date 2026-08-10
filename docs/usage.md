@@ -167,6 +167,25 @@ A quorum **below the threshold** fails closed: the shares no longer interpolate 
 the combined signature does not verify and aggregation is rejected. This is FROST on ristretto255,
 reusing the same curve as the OPRF module.
 
+## Zero-knowledge proof (ZK) — a separate tab
+
+A **zero-knowledge range proof** convinces a verifier that a **hidden value lies in a public range
+[min, max]** — without revealing the value. It is its own tab (native backend required) and needs **no
+trusted setup**: anyone can verify a proof from the file alone.
+
+1. **Choose the hidden value** — type a number, or upload a dataset and use its **row count** or the
+   **sum of a numeric column**. When the value comes from data it is computed locally and never shown.
+2. **Set the range and create the proof** — the value is hidden in a Pedersen commitment
+   `C = v·G + r·H`; a per-bit Chaum-Pedersen OR proof shows it decomposes into bits inside the range,
+   and a matching proof on `(max − v)` pins it from above — together proving `min ≤ v ≤ max`.
+3. **Verify or share** — the app checks the proof and shows that flipping a single byte makes it reject.
+   Download the proof file and hand it to anyone; they can verify it on the same tab (the bounds travel
+   inside the proof).
+
+A **false statement cannot be proved** — if the value is outside the range the proof simply cannot be
+produced (it fails closed) — and a **tampered proof does not verify**. This is a transparent Pedersen +
+Chaum-Pedersen range proof on ristretto255, reusing the same curve as the OPRF module.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -220,6 +239,13 @@ reusing the same curve as the OPRF module.
   generation, and runs all custodians in one process as a simulation — a real deployment would place
   each share on a separate device and exchange the two signing rounds over the network. A sub-threshold
   quorum fails closed. It proves *who authorized* a message; it does not by itself encrypt your file.
+- **Zero-knowledge proof (ZK)** proves a *property* of a value — that it lies in a range — not the
+  value itself, and it is **not encryption**: it protects a single number, not your file. It is a
+  transparent range proof (Pedersen commitment + per-bit Chaum-Pedersen OR proof, Fiat-Shamir), so
+  there is **no trusted setup** and anyone can verify from the proof file alone. Values are
+  non-negative whole numbers up to 2⁵³; a false statement is unprovable and a tampered proof fails
+  closed. A single machine plays both prover and verifier here, but the proof is genuinely portable —
+  hand the file to a third party and they can check it independently.
 - **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
   part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
   separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to

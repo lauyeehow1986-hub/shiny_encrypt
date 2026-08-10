@@ -77,9 +77,10 @@ register_all_schemes <- function() {
   .register_scheme_placeholder("tfhe", "Heavy",
     "Fully Homomorphic Encryption (TFHE, compute-on-ciphertext)", "the native TFHE crate + CUDA",
     "Mean/sum/linreg on ciphertext. Build the native package to enable.", cap("tfhe"))
-  .register_scheme_placeholder("zk-stark", "Heavy",
-    "Zero-Knowledge proof (zk-STARK / Bulletproofs)", "the native ZK crate",
-    "Prove a property without revealing data. Build the native package to enable.", cap("zk-stark"))
+  .register_scheme_placeholder("zk-range", "Heavy",
+    "Zero-Knowledge range proof (Pedersen + bit-OR, ristretto255)", "the native curve25519-dalek ZK backend",
+    "Prove a hidden number lies in a public range [min, max] without revealing it — use the 'Zero-knowledge proof (ZK)' tab. A Pedersen commitment C = v·G + r·H hides the value; a per-bit Chaum-Pedersen OR proof (Fiat-Shamir, non-interactive) shows it decomposes into bits inside the range, and a matching proof on (max − v) pins it from above, together proving min ≤ v ≤ max. Transparent (no trusted setup), verifiable by anyone from the proof file alone; a false statement cannot be proved and a tampered proof fails closed. Reuses the OPRF group (no new dependency).",
+    cap("zk-range"))
 
   # Interactive (multi-party; single-machine two-party simulation once built)
   .register_scheme_placeholder("psi", "Interactive",

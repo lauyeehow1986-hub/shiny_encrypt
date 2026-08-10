@@ -392,6 +392,8 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("opaque"))
   expect_equal("frost" %in% s$id[s$available],
                crypto_backend_available("frost"))
+  expect_equal("zk-range" %in% s$id[s$available],
+               crypto_backend_available("zk-range"))
 })
 
 test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
@@ -604,4 +606,58 @@ test_that("native FROST (if built): t-of-n threshold signing, verifies, fails cl
   expect_error(native_frost_verify(keys$group_pk, charToRaw(msg), as.raw(1:10)))  # short sig
   expect_error(native_frost_aggregate(sig$package, charToRaw(enc2utf8(msg)),
                                       keys$group_pk, as.raw(1:10)))       # bad share length
+})
+
+test_that("native ZK (if built): range proof hides the value, verifies, fails closed", {
+  skip_if_not(crypto_backend_available("zk-range"), "native ZK backend not built")
+
+  # An honest in-range value proves and verifies (the value is hidden inside a
+  # Pedersen commitment and is not an input to verification).
+  proof <- zk_range_prove(300, 100, 500)
+  expect_true(is.raw(proof))
+  expect_true(zk_range_verify(proof))
+
+  # Boundaries and the degenerate single-point range hold.
+  expect_true(zk_range_verify(zk_range_prove(100, 100, 500)))    # == min
+  expect_true(zk_range_verify(zk_range_prove(500, 100, 500)))    # == max
+  expect_true(zk_range_verify(zk_range_prove(7, 7, 7)))          # min == max
+  expect_true(zk_range_verify(zk_range_prove(0, 0, 1)))          # 1-bit range
+
+  # A wider (24-bit) range still verifies.
+  expect_true(zk_range_verify(zk_range_prove(1234567, 0, 16777215)))
+
+  # A false statement cannot be proved — prove() fails closed either side.
+  expect_error(zk_range_prove(50, 100, 500))                     # below
+  expect_error(zk_range_prove(9999, 100, 500))                   # above
+  expect_error(zk_range_prove(300, 500, 100))                    # max < min
+
+  # Two proofs of the same statement differ (fresh blinding) yet both verify —
+  # zero-knowledge: the proof leaks nothing that ties them together.
+  p1 <- zk_range_prove(250, 0, 1000)
+  p2 <- zk_range_prove(250, 0, 1000)
+  expect_false(identical(p1, p2))
+  expect_true(zk_range_verify(p1))
+  expect_true(zk_range_verify(p2))
+
+  # Tampering fails closed: flipping any single body byte makes verify reject
+  # (returns FALSE) or reject-with-error (an invalid point encoding) — never TRUE.
+  rejects <- function(pr) !isTRUE(tryCatch(zk_range_verify(pr), error = function(e) FALSE))
+  for (idx in c(51L, 60L, 200L, length(proof))) {
+    tam <- proof
+    tam[idx] <- as.raw(bitwXor(as.integer(tam[idx]), 1L))
+    expect_true(rejects(tam))
+  }
+  # Rewriting the bounds in the header (widening the claimed range) fails closed.
+  tam_hi <- proof; tam_hi[18] <- as.raw(bitwXor(as.integer(tam_hi[18]), 128L))
+  expect_true(rejects(tam_hi))
+
+  # Malformed blobs error (fail closed), not silently pass.
+  expect_error(native_zk_range_verify(as.raw(1:10)))             # too short
+  expect_error(native_zk_range_prove(as.raw(1:4), as.raw(rep(0, 8)), as.raw(rep(0, 8))))  # bad value width
+
+  # The demo wrapper reports the honest and false cases correctly.
+  d_ok <- zk_demo(300, 100, 500)
+  expect_true(d_ok$success && d_ok$verified && d_ok$tamper_rejected)
+  d_no <- zk_demo(50, 100, 500)
+  expect_false(d_no$success)
 })

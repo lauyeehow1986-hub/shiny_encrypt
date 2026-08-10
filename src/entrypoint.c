@@ -52,6 +52,8 @@ extern SEXP wrap__native_frost_commit(void);
 extern SEXP wrap__native_frost_sign(SEXP signing_share, SEXP identifier, SEXP nonce_secret, SEXP msg, SEXP package, SEXP group_pk);
 extern SEXP wrap__native_frost_aggregate(SEXP package, SEXP msg, SEXP group_pk, SEXP shares);
 extern SEXP wrap__native_frost_verify(SEXP group_pk, SEXP msg, SEXP signature);
+extern SEXP wrap__native_zk_range_prove(SEXP value, SEXP min_bytes, SEXP max_bytes);
+extern SEXP wrap__native_zk_range_verify(SEXP proof);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -97,6 +99,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_frost_sign",      (DL_FUNC) &wrap__native_frost_sign,      6},
     {"wrap__native_frost_aggregate", (DL_FUNC) &wrap__native_frost_aggregate, 4},
     {"wrap__native_frost_verify",    (DL_FUNC) &wrap__native_frost_verify,    3},
+    {"wrap__native_zk_range_prove",  (DL_FUNC) &wrap__native_zk_range_prove,  3},
+    {"wrap__native_zk_range_verify", (DL_FUNC) &wrap__native_zk_range_verify, 1},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

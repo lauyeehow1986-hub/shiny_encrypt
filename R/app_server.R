@@ -21,7 +21,9 @@ app_server <- function(input, output, session) {
                               opaque_reg_export = NULL, opaque_login_res = NULL,
                               opaque_msg = NULL,
                               frost_keys = NULL, frost_sign_res = NULL,
-                              frost_msg = NULL)
+                              frost_msg = NULL,
+                              zk_res = NULL, zk_msg = NULL,
+                              zk_verify_res = NULL, zk_verify_msg = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -868,6 +870,9 @@ app_server <- function(input, output, session) {
   # Threshold signature (FROST) tab handlers (native backend).
   frost_server(input, output, session, rv)
 
+  # Zero-knowledge range-proof tab handlers (native backend).
+  zk_server(input, output, session, rv)
+
   # Proxy Re-Encryption tab handlers — only when the optional GPL companion is present.
   if (pre_companion_available()) pre_server(input, output, session, rv)
 
@@ -891,6 +896,8 @@ app_server <- function(input, output, session) {
                "opaque_transcript", "opaque_downloads",
                "frost_status", "frost_signer_picker", "frost_keygen_out",
                "frost_sign_out", "frost_transcript", "frost_downloads",
+               "zk_status", "zk_col_ui", "zk_prove_out", "zk_transcript",
+               "zk_downloads", "zk_verify_out",
                "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }

@@ -172,5 +172,26 @@ single ordinary Schnorr signature &mdash; and no custodian ever holds the whole 
 <p class="text-muted small">Any t custodians sign; a smaller quorum fails closed &mdash; the shares no
 longer interpolate the group secret, so the combined signature does not verify and aggregation is
 rejected. Binding factors over the whole commitment set defeat known attacks on naive multi-signing.
-This is FROST on ristretto255, reusing the same curve as the OPRF module.</p>'
+This is FROST on ristretto255, reusing the same curve as the OPRF module.</p>
+
+<h4>Zero-knowledge proof (ZK) &mdash; a separate tab</h4>
+<p>A zero-knowledge range proof convinces a verifier that a hidden number lies inside a public range
+[min, max] &mdash; for example that a cohort size is between 100 and 500 &mdash; without revealing the
+number itself. It is its own tab (native backend required) and needs no trusted setup: anyone can check
+a proof from the file alone.</p>
+<ol>
+  <li><b>Choose the hidden value</b> &mdash; type a number, or point at a dataset and use its row count
+      or the sum of a numeric column. When the value comes from data it is computed on this machine and
+      never shown.</li>
+  <li><b>Set the range and create the proof</b> &mdash; the value is placed inside a Pedersen commitment
+      C = v&middot;G + r&middot;H; a per-bit proof shows it decomposes into bits within the range, and a
+      matching proof on (max &minus; v) pins it from above, together proving min &le; v &le; max.</li>
+  <li><b>Verify or share</b> &mdash; the app checks the proof, shows that a single flipped byte makes it
+      reject, and lets you download the proof file. Hand that file to anyone and they can verify it on
+      the same tab; the bounds travel inside it.</li>
+</ol>
+<p class="text-muted small">A false statement cannot be proved &mdash; if the value is outside the range
+the proof simply cannot be produced (it fails closed) &mdash; and a tampered proof does not verify. This
+is a transparent Pedersen + Chaum-Pedersen range proof on ristretto255, reusing the same curve as the
+OPRF module (no new dependency). It protects a single number, not the whole file.</p>'
 }
