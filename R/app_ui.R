@@ -261,7 +261,8 @@ app_ui <- function() {
     bslib::nav_panel("Encrypt", ui_encrypt()),
     bslib::nav_panel("Decrypt", ui_decrypt()),
     bslib::nav_panel("De-identify (FPE)", ui_fpe()),
-    bslib::nav_panel("Private stats (DP)", ui_dp())
+    bslib::nav_panel("Private stats (DP)", ui_dp()),
+    bslib::nav_panel("Set intersection (PSI)", ui_psi())
   )
   # Proxy Re-Encryption is an optional GPL companion; show its tab only when installed.
   if (pre_companion_available())

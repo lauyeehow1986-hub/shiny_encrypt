@@ -37,6 +37,9 @@ extern SEXP wrap__native_oprf_public_key(SEXP key);
 extern SEXP wrap__native_oprf_blind(SEXP input);
 extern SEXP wrap__native_oprf_evaluate(SEXP key, SEXP blinded);
 extern SEXP wrap__native_oprf_finalize(SEXP input, SEXP blind_bundle, SEXP evaluated, SEXP pubkey);
+extern SEXP wrap__native_psi_keygen(void);
+extern SEXP wrap__native_psi_hash_mask(SEXP scalar, SEXP elements);
+extern SEXP wrap__native_psi_mask_points(SEXP scalar, SEXP points);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -67,6 +70,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_oprf_blind",      (DL_FUNC) &wrap__native_oprf_blind,      1},
     {"wrap__native_oprf_evaluate",   (DL_FUNC) &wrap__native_oprf_evaluate,   2},
     {"wrap__native_oprf_finalize",   (DL_FUNC) &wrap__native_oprf_finalize,   4},
+    {"wrap__native_psi_keygen",      (DL_FUNC) &wrap__native_psi_keygen,      0},
+    {"wrap__native_psi_hash_mask",   (DL_FUNC) &wrap__native_psi_hash_mask,   2},
+    {"wrap__native_psi_mask_points", (DL_FUNC) &wrap__native_psi_mask_points, 2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

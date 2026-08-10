@@ -61,6 +61,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_cpabe_setup"))   caps <- c(caps, "cp-abe")
     if (has("wrap__native_ibe_setup"))     caps <- c(caps, "ibe")
     if (has("wrap__native_oprf_keygen"))   caps <- c(caps, "oprf")
+    if (has("wrap__native_psi_keygen"))    caps <- c(caps, "psi")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -287,6 +288,33 @@ native_oprf_finalize <- function(input, blind_bundle, evaluated, pubkey) {
   .require_native()
   .Call("wrap__native_oprf_finalize", as_raw(input), as_raw(blind_bundle),
         as_raw(evaluated), as_raw(pubkey))
+}
+
+# ---- PSI (private set intersection, ECDH / DH-PSI on ristretto255) ----------
+# Two parties learn only the overlap of their sets. Each masks with its own
+# secret scalar; the group's commutativity makes a shared element land on the
+# same doubly-masked point. Only masked points cross between parties (R/psi.R
+# drives the two-party protocol). Elements are length-prefixed raw so arbitrary
+# identifiers round-trip exactly.
+
+# 32-byte PSI masking scalar (secret to one party).
+native_psi_keygen <- function() {
+  .require_native()
+  .Call("wrap__native_psi_keygen")
+}
+
+# Hash + mask own elements: `elements` is a length-prefixed blob (see
+# .psi_pack_elements); returns n*32 bytes (one compressed point per element).
+native_psi_hash_mask <- function(scalar, elements) {
+  .require_native()
+  .Call("wrap__native_psi_hash_mask", as_raw(scalar), as_raw(elements))
+}
+
+# Re-mask the other party's masked points: `points` is k*32 bytes; returns the
+# same length (each point multiplied by `scalar`). Invalid points fail closed.
+native_psi_mask_points <- function(scalar, points) {
+  .require_native()
+  .Call("wrap__native_psi_mask_points", as_raw(scalar), as_raw(points))
 }
 
 native_backends_status <- function() {

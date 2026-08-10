@@ -386,6 +386,8 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("ibe"))
   expect_equal("oprf" %in% s$id[s$available],
                crypto_backend_available("oprf"))
+  expect_equal("psi" %in% s$id[s$available],
+               crypto_backend_available("psi"))
 })
 
 test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
@@ -444,4 +446,49 @@ test_that("OPRF key source (if built) needs both the input and the OPRF key", {
                                        oprf_key = native_oprf_keygen())))
   # an empty input is rejected at seal time
   expect_error(resolve_key(list(type = "oprf", text = "", oprf_key = okey)))
+})
+
+test_that("native PSI (if built): finds the true overlap, only the overlap, fails closed", {
+  skip_if_not(crypto_backend_available("psi"), "native PSI backend not built")
+  A <- paste0("MRN", sprintf("%04d", 1:8))
+  B <- paste0("MRN", sprintf("%04d", 5:12))
+
+  res <- psi_two_party(A, B)
+  expect_setequal(res$intersection, intersect(A, B))    # exactly the shared IDs
+  expect_equal(res$n_inter, 4L)
+  expect_equal(res$n_a, 8L); expect_equal(res$n_b, 8L)
+  expect_equal(res$jaccard, 4 / 12)
+
+  # no overlap -> empty; full overlap -> everything
+  expect_equal(psi_two_party(c("x", "y"), c("p", "q"))$n_inter, 0L)
+  full <- psi_two_party(A, A)
+  expect_setequal(full$intersection, A)
+  expect_equal(full$jaccard, 1)
+
+  # sets, not multisets: duplicates are de-duplicated before the protocol
+  expect_equal(psi_two_party(c("a", "a", "b"), "a")$n_a, 2L)
+
+  # the wire transcript is masked points, never the raw IDs; single-masked points
+  # of the two parties differ (each carries only its own scalar), and none of the
+  # 64-hex strings equals any plaintext identifier
+  expect_length(res$transcript$a_masked, 8L)
+  expect_true(all(nchar(res$transcript$a_masked) == 64L))
+  expect_false(any(res$transcript$a_masked %in% res$transcript$b_masked))
+  expect_false(any(A %in% res$transcript$a_masked))
+
+  # determinism of the RESULT despite fresh random scalars each run
+  expect_setequal(psi_two_party(A, B)$intersection, res$intersection)
+
+  # arbitrary (non-ASCII) identifiers round-trip exactly through the packing
+  U <- c("caf\u00e9", "na\u00efve", "\u65e5\u672c", "MRN0001")
+  expect_setequal(psi_two_party(U, c("na\u00efve", "\u65e5\u672c", "zzz"))$intersection,
+                  c("na\u00efve", "\u65e5\u672c"))
+
+  # degenerate inputs are rejected
+  expect_error(psi_two_party(character(0), A))
+  expect_error(psi_two_party(A, c(NA, "")))
+
+  # native primitives fail closed on a malformed point buffer / bad scalar
+  expect_error(native_psi_mask_points(native_psi_keygen(), as.raw(1:33)))  # not a multiple of 32
+  expect_error(native_psi_hash_mask(sodium::random(31L), .psi_pack_elements("x")))  # 31-byte scalar
 })

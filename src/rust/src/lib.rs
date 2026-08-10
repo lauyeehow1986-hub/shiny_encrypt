@@ -836,6 +836,91 @@ fn native_oprf_finalize(
     Ok(h.finalize().to_vec())
 }
 
+// ---- PSI (private set intersection, ECDH / DH-PSI on ristretto255) ----------
+// Two parties learn only which elements their sets share, nothing else. Each
+// element is hashed to a group point; each party masks with its own secret
+// scalar. Because the group is commutative, a*(b*H(x)) == b*(a*H(x)), so an
+// element present in both sets lands on the same doubly-masked point while
+// everything else looks like a uniform random point. The masked points are all
+// that cross the wire (an exportable transcript); the raw identifiers never do.
+// This reuses the OPRF scalar/point helpers above (oprf_key_scalar rejects a
+// zero scalar; oprf_point_from validates each compressed point).
+
+const PSI_DST_GROUP: &[u8] = b"shinyEncrypt-PSI-ristretto255-v1-HashToGroup";
+
+// Map one set element to a group point via SHA-512 + ristretto's one-way map.
+// A distinct DST keeps PSI points uncorrelated with the OPRF's.
+fn psi_hash_to_group(input: &[u8]) -> RistrettoPoint {
+    let mut h = Sha512::new();
+    h.update(PSI_DST_GROUP);
+    h.update((input.len() as u64).to_be_bytes());
+    h.update(input);
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    RistrettoPoint::from_uniform_bytes(&wide)
+}
+
+// Parse a length-prefixed element blob: repeated [u32_be len][len bytes]. Using
+// raw bytes (not R strings) keeps arbitrary identifiers — including embedded
+// NULs or non-UTF-8 — round-tripping exactly.
+fn psi_parse_elements(blob: &[u8]) -> std::result::Result<Vec<&[u8]>, String> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < blob.len() {
+        if i + 4 > blob.len() {
+            return Err("psi: truncated element length prefix".into());
+        }
+        let len = u32::from_be_bytes([blob[i], blob[i + 1], blob[i + 2], blob[i + 3]]) as usize;
+        i += 4;
+        if i + len > blob.len() {
+            return Err("psi: element length runs past the buffer".into());
+        }
+        out.push(&blob[i..i + len]);
+        i += len;
+    }
+    Ok(out)
+}
+
+/// Generate a 32-byte PSI masking scalar (a ristretto255 scalar). Secret to its
+/// party; never leaves the machine in the two-party protocol.
+#[extendr]
+fn native_psi_keygen() -> Vec<u8> {
+    oprf_rand_scalar().to_bytes().to_vec()
+}
+
+/// Hash + mask a party's own elements: for each element e in the length-prefixed
+/// `elements` blob, output scalar*H(e) (32 compressed bytes each, concatenated).
+/// This is the first masking of one's own set before sending it out.
+#[extendr]
+fn native_psi_hash_mask(scalar: &[u8], elements: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    let s = oprf_key_scalar(scalar)?;
+    let items = psi_parse_elements(elements)?;
+    let mut out = Vec::with_capacity(items.len() * 32);
+    for e in items {
+        let p = s * psi_hash_to_group(e);
+        out.extend_from_slice(&p.compress().to_bytes());
+    }
+    Ok(out)
+}
+
+/// Re-mask already-masked points from the other party: for each 32-byte point in
+/// `points`, output scalar*point. Applied to the counterparty's masked set, this
+/// produces the doubly-masked points that are compared for equality. Rejects any
+/// invalid point encoding (fails closed).
+#[extendr]
+fn native_psi_mask_points(scalar: &[u8], points: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    if points.len() % 32 != 0 {
+        return Err("psi: point buffer must be a multiple of 32 bytes".into());
+    }
+    let s = oprf_key_scalar(scalar)?;
+    let mut out = Vec::with_capacity(points.len());
+    for chunk in points.chunks_exact(32) {
+        let p = oprf_point_from(chunk, "masked element")?;
+        out.extend_from_slice(&(s * p).compress().to_bytes());
+    }
+    Ok(out)
+}
+
 // ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
@@ -873,5 +958,8 @@ extendr_module! {
     fn native_oprf_blind;
     fn native_oprf_evaluate;
     fn native_oprf_finalize;
+    fn native_psi_keygen;
+    fn native_psi_hash_mask;
+    fn native_psi_mask_points;
     fn native_backend_version;
 }

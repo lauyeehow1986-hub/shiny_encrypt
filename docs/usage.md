@@ -104,6 +104,28 @@ part of the encrypt/decrypt flow.
 Counts and histograms use a **discrete** (integer) Laplace mechanism that avoids the floating-point
 pitfalls of naive continuous samplers; all noise is drawn from a cryptographically secure source.
 
+## Set intersection (PSI) — a separate tab
+
+Private set intersection finds which identifiers **two** parties share, without either side
+revealing its non-shared entries. It is its own tab (native backend required), shipped as a
+single-machine two-party simulation.
+
+1. **Upload dataset A** (your set) and pick its **ID column**.
+2. **Upload dataset B** (their set) and pick its **ID column**.
+3. **Compute** — the shared IDs are listed with the set sizes and the Jaccard overlap. Download the
+   shared IDs, the matched rows of A, or the **wire transcript** (the masked points that would
+   actually cross between parties — uniform-random without the other party's secret).
+
+Each identifier is hashed to a ristretto255 point and masked with a per-party secret scalar; the
+group is commutative, so a shared value lands on the same doubly-masked point while everything else
+looks random. Only masked points cross the wire — the raw lists never do. It reuses the same curve
+as the OPRF module.
+
+> PSI is **honest-but-curious**: the party running the match learns the overlap and the other set's
+> *size*, and both sides must run the protocol faithfully. Values are matched exactly (as text), so
+> normalise identifiers (case, whitespace, leading zeros) before comparing. Duplicates within a set
+> are ignored — it is a set operation.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -138,6 +160,12 @@ pitfalls of naive continuous samplers; all noise is drawn from a cryptographical
   the input nor the OPRF key alone can derive it, and the party holding the OPRF key never sees the
   input (the oblivious property). The security rests on keeping the two apart — put the `.oprfkey`
   on a different device or with a different custodian than the input. Losing either loses the file.
+- **Private set intersection (PSI)** reveals *only* the overlap of two identifier sets, but it is
+  honest-but-curious and not anonymisation: the matching party learns which of its own IDs are shared
+  and the counterparty's set size, and a shared identifier is still a real identifier once matched.
+  Only masked curve points cross between parties, never the raw lists. It is a two-party protocol
+  shipped as a single-machine simulation; a genuine cross-organisation run needs the counterparty to
+  execute their half. Match keys are compared exactly, so normalise them first.
 - **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
   part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
   separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to

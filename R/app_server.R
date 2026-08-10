@@ -15,7 +15,8 @@ app_server <- function(input, output, session) {
                               dec_env = NULL, dec_pt = NULL, pqc_keys = NULL,
                               sign_keys = NULL, fpe_out = NULL, fpe_rev = NULL,
                               cpabe_keys = NULL, cpabe_issued = NULL,
-                              ibe_keys = NULL, ibe_issued = NULL)
+                              ibe_keys = NULL, ibe_issued = NULL,
+                              psi_out = NULL, psi_msg = NULL)
 
   # populate encryption scheme choices with what is actually available
   shiny::observe({
@@ -853,6 +854,9 @@ app_server <- function(input, output, session) {
   # Private stats (DP) tab handlers (pure-R, always available).
   dp_server(input, output, session, rv)
 
+  # Private set intersection (PSI) tab handlers (native backend).
+  psi_server(input, output, session, rv)
+
   # Proxy Re-Encryption tab handlers — only when the optional GPL companion is present.
   if (pre_companion_available()) pre_server(input, output, session, rv)
 
@@ -869,7 +873,10 @@ app_server <- function(input, output, session) {
                "dec_source_hint", "dec_summary", "dec_preview",
                "dec_downloads", "fpe_status", "fpe_col_ui", "fpe_summary", "fpe_downloads",
                "fpe_preview", "dp_group_ui", "dp_value_ui", "dp_status",
-               "dp_result", "dp_table", "scheme_table", "help_md")) {
+               "dp_result", "dp_table",
+               "psi_a_col", "psi_b_col", "psi_status", "psi_result", "psi_table",
+               "psi_transcript", "psi_downloads",
+               "scheme_table", "help_md")) {
     shiny::outputOptions(output, id, suspendWhenHidden = FALSE)
   }
 }

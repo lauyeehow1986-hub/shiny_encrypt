@@ -119,5 +119,22 @@ while bounding how much any single row can change the answer.</p>
 <p class="text-muted small">DP is not encryption and not de-identification: it releases a noisy
 answer, not the rows. The guarantee holds only if you respect the budget and choose clamp bounds
 from domain knowledge rather than by peeking at the data. Counts use an integer (discrete) noise
-mechanism; all noise comes from a secure random source.</p>'
+mechanism; all noise comes from a secure random source.</p>
+<h4>Set intersection (PSI) &mdash; a separate tab</h4>
+<p>Private set intersection finds which identifiers two parties share, without either side revealing
+its non-shared entries. It is its own tab (native backend required), shipped as a single-machine
+two-party simulation.</p>
+<ol>
+  <li><b>Upload dataset A</b> (your set) and pick its <b>ID column</b>; do the same for
+      <b>dataset B</b>.</li>
+  <li><b>Compute</b> &mdash; the shared IDs are listed with both set sizes and the Jaccard overlap.</li>
+  <li><b>Download</b> the shared IDs, the matched rows of A, or the wire <b>transcript</b> &mdash; the
+      masked points that would cross between parties, uniform-random without the other secret.</li>
+</ol>
+<p class="text-muted small">Each identifier is hashed to a ristretto255 point and masked with a
+per-party secret scalar; the group is commutative, so a shared value lands on the same doubly-masked
+point while everything else looks random. Only masked points cross the wire, never the raw lists.
+PSI is honest-but-curious: the matching party learns the overlap and the other set size, nothing more.
+Values are matched exactly as text, so normalise case and spacing first; duplicates within a set are
+ignored. It reuses the same curve as the OPRF module.</p>'
 }

@@ -83,8 +83,9 @@ register_all_schemes <- function() {
 
   # Interactive (multi-party; single-machine two-party simulation once built)
   .register_scheme_placeholder("psi", "Interactive",
-    "Private Set Intersection", "the native PSI crate",
-    "Two-party set overlap (simulated). Build the native package to enable.", cap("psi"))
+    "Private Set Intersection (ECDH / DH-PSI)", "the native curve25519-dalek PSI",
+    "Find which identifiers two parties share without revealing the rest — use the 'Set intersection (PSI)' tab. ECDH-PSI on ristretto255 (reuses the OPRF group): each party masks its set with a secret scalar, only masked (random-looking) points cross the wire, and equal double-masked points mark the overlap. Shipped as a single-machine two-party simulation with an exportable transcript.",
+    cap("psi"))
   .register_scheme_placeholder("frost", "Interactive",
     "FROST threshold signatures (t-of-n)", "the native FROST crate",
     "Shared authorization (simulated). Build the native package to enable.", cap("frost"))
