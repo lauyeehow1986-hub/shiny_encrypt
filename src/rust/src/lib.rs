@@ -21,6 +21,7 @@ use fips204::ml_dsa_65;
 use fips204::traits::{SerDes as SigSerDes, Signer, Verifier};
 
 use hkdf::Hkdf;
+use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use sha2::{Digest, Sha512};
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
@@ -921,6 +922,445 @@ fn native_psi_mask_points(scalar: &[u8], points: &[u8]) -> std::result::Result<V
     Ok(out)
 }
 
+// ---- OPAQUE (asymmetric PAKE, OPAQUE-3DH over ristretto255) ----------------
+// A password-authenticated key exchange in which the SERVER never sees the
+// password and stores no password-equivalent: a compromise of its database
+// still forces a per-user offline dictionary attack (slowed by Argon2). On
+// success both sides derive the same session key AND the client obtains a
+// stable `export_key` it can use to encrypt data — the app's tie-in.
+//
+// This follows draft-irtf-cfrg-opaque (OPAQUE-3DH, internal-envelope mode) on
+// the ristretto255 group, reusing the OPRF scalar/point helpers above. Labels
+// are self-consistent (a distinct DST), so it is not wire-compatible with other
+// OPAQUE stacks — fine for single-machine use where the app plays both roles.
+//
+// Message flow (state kept as opaque byte blobs so R can model the two roles):
+//   Registration:  client blind(pw) -> server register_response(ku, eval)
+//                  -> client register_finalize -> record{ku,pk_c,masking,env}
+//   Login (AKE):   client_init -> KE1 -> server_respond -> KE2
+//                  -> client_finish -> KE3 (+ session_key, export_key)
+//                  -> server_finish (verifies KE3) -> session_key
+
+const OPAQUE_DST: &[u8] = b"shinyEncrypt-OPAQUE-ristretto255-v1";
+
+fn sha512_64(msg: &[u8]) -> [u8; 64] {
+    let mut h = Sha512::new();
+    h.update(msg);
+    let mut o = [0u8; 64];
+    o.copy_from_slice(h.finalize().as_slice());
+    o
+}
+
+// HKDF-Extract / Expand over SHA-512 (self-consistent labels, not RFC-wire).
+fn opaque_extract(salt: &[u8], ikm: &[u8]) -> [u8; 64] {
+    let (prk, _) = Hkdf::<Sha512>::extract(Some(salt), ikm);
+    let mut o = [0u8; 64];
+    o.copy_from_slice(prk.as_slice());
+    o
+}
+fn opaque_expand(prk: &[u8], info: &[u8], len: usize) -> Vec<u8> {
+    let hk = Hkdf::<Sha512>::from_prk(prk).expect("opaque: bad prk length");
+    let mut okm = vec![0u8; len];
+    hk.expand(info, &mut okm).expect("opaque: bad expand length");
+    okm
+}
+fn opaque_info(label: &[u8], ctx: &[u8]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(OPAQUE_DST.len() + label.len() + ctx.len());
+    v.extend_from_slice(OPAQUE_DST);
+    v.extend_from_slice(label);
+    v.extend_from_slice(ctx);
+    v
+}
+
+type OpaqueMac = Hmac<Sha512>;
+fn opaque_mac(key: &[u8], msg: &[u8]) -> [u8; 64] {
+    let mut m = <OpaqueMac as Mac>::new_from_slice(key).expect("opaque: hmac key");
+    m.update(msg);
+    let mut o = [0u8; 64];
+    o.copy_from_slice(&m.finalize().into_bytes());
+    o
+}
+fn opaque_mac_verify(key: &[u8], msg: &[u8], tag: &[u8]) -> bool {
+    let mut m = <OpaqueMac as Mac>::new_from_slice(key).expect("opaque: hmac key");
+    m.update(msg);
+    m.verify_slice(tag).is_ok()
+}
+
+// Constant-time byte compare (avoids leaking where a MAC first differs).
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut d = 0u8;
+    for i in 0..a.len() {
+        d |= a[i] ^ b[i];
+    }
+    d == 0
+}
+
+fn xor_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
+    a.iter().zip(b.iter()).map(|(x, y)| x ^ y).collect()
+}
+
+// Password hardening (Argon2id). Applied to the OPRF output so a stolen server
+// record still costs a full memory-hard hash per password guess. OWASP costs.
+fn opaque_harden(input: &[u8]) -> [u8; 32] {
+    let params = Params::new(19_456, 2, 1, Some(32)).expect("opaque: argon2 params");
+    let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let salt = [0u8; 16]; // input is already high-entropy (an OPRF output)
+    let mut out = [0u8; 32];
+    a2.hash_password_into(input, &salt, &mut out)
+        .expect("opaque: argon2 hardening");
+    out
+}
+
+// randomized_pwd = Extract("", oprf_output || Harden(oprf_output)).
+fn opaque_randomized_pwd(oprf_output: &[u8]) -> [u8; 64] {
+    let stretched = opaque_harden(oprf_output);
+    let mut ikm = Vec::with_capacity(oprf_output.len() + 32);
+    ikm.extend_from_slice(oprf_output);
+    ikm.extend_from_slice(&stretched);
+    opaque_extract(&[], &ikm)
+}
+
+// Deterministically derive the client's long-term keypair scalar from a seed
+// (internal-envelope mode: the private key is regenerated, never stored).
+fn opaque_scalar_from_seed(seed: &[u8]) -> Scalar {
+    let mut h = Sha512::new();
+    h.update(OPAQUE_DST);
+    h.update(b"DeriveAuthKeyPair");
+    h.update(seed);
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    let s = Scalar::from_bytes_mod_order_wide(&wide);
+    if s == Scalar::ZERO {
+        Scalar::ONE
+    } else {
+        s
+    }
+}
+
+// Base-mode OPRF finalize (no DLEQ — server authentication comes from the AKE):
+// unblind k*r*H(pw) to k*H(pw) and hash to a 64-byte output over (pw, k).
+fn opaque_oprf_output(password: &[u8], r: &Scalar, evaluated: &RistrettoPoint) -> [u8; 64] {
+    let n = r.invert() * evaluated;
+    let mut h = Sha512::new();
+    h.update(OPAQUE_DST);
+    h.update(b"OprfFinalize");
+    h.update((password.len() as u64).to_be_bytes());
+    h.update(password);
+    h.update(n.compress().to_bytes());
+    let mut o = [0u8; 64];
+    o.copy_from_slice(h.finalize().as_slice());
+    o
+}
+
+/// Server long-term identity keypair: server_priv(32 scalar) || server_pub(32).
+/// Created once per server; the public half is bound into every user envelope.
+#[extendr]
+fn native_opaque_server_setup() -> Vec<u8> {
+    let sk = oprf_rand_scalar();
+    let pk = RISTRETTO_BASEPOINT_POINT * sk;
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&sk.to_bytes());
+    out.extend_from_slice(&pk.compress().to_bytes());
+    out
+}
+
+/// Server side of registration: on the client's blinded element, generate a
+/// fresh per-user OPRF key `ku` and evaluate. Returns ku(32) || evaluated(32) ||
+/// server_pub(32). R keeps `ku` on the server; evaluated||server_pub go to the
+/// client. `server_pub` is validated and echoed so the client can bind it.
+#[extendr]
+fn native_opaque_register_response(
+    blinded: &[u8],
+    server_pub: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    let b = oprf_point_from(blinded, "blinded element")?;
+    let _ = oprf_point_from(server_pub, "server public key")?;
+    let ku = oprf_rand_scalar();
+    let evaluated = ku * b;
+    let mut out = Vec::with_capacity(96);
+    out.extend_from_slice(&ku.to_bytes());
+    out.extend_from_slice(&evaluated.compress().to_bytes());
+    out.extend_from_slice(server_pub);
+    Ok(out)
+}
+
+/// Client side of registration. From (password, blind bundle, evaluated element,
+/// server_pub) build the credential the server stores plus the client's export
+/// key. Returns client_pub(32) || masking_key(64) || envelope(96) ||
+/// export_key(64); envelope = nonce(32) || auth_tag(64). R stores the first 192
+/// bytes (with `ku`) as the server record; export_key stays with the client.
+#[extendr]
+fn native_opaque_register_finalize(
+    password: &[u8],
+    blind_bundle: &[u8],
+    evaluated: &[u8],
+    server_pub: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if blind_bundle.len() != 64 {
+        return Err("opaque: blind bundle must be 64 bytes".into());
+    }
+    let r = oprf_scalar_from(&blind_bundle[0..32], "blind scalar")?;
+    let eval = oprf_point_from(evaluated, "evaluated element")?;
+    let _ = oprf_point_from(server_pub, "server public key")?;
+
+    let oprf_output = opaque_oprf_output(password, &r, &eval);
+    let rwd = opaque_randomized_pwd(&oprf_output);
+    let masking_key = opaque_expand(&rwd, &opaque_info(b"MaskingKey", &[]), 64);
+
+    let mut envelope_nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut envelope_nonce);
+    let auth_key = opaque_expand(&rwd, &opaque_info(b"AuthKey", &envelope_nonce), 64);
+    let export_key = opaque_expand(&rwd, &opaque_info(b"ExportKey", &envelope_nonce), 64);
+    let seed = opaque_expand(&rwd, &opaque_info(b"PrivateKey", &envelope_nonce), 32);
+    let client_sk = opaque_scalar_from_seed(&seed);
+    let client_pk = (RISTRETTO_BASEPOINT_POINT * client_sk).compress().to_bytes();
+
+    let mut tag_msg = Vec::with_capacity(96);
+    tag_msg.extend_from_slice(&envelope_nonce);
+    tag_msg.extend_from_slice(server_pub);
+    tag_msg.extend_from_slice(&client_pk);
+    let auth_tag = opaque_mac(&auth_key, &tag_msg);
+
+    let mut out = Vec::with_capacity(256);
+    out.extend_from_slice(&client_pk); // 32
+    out.extend_from_slice(&masking_key); // 64
+    out.extend_from_slice(&envelope_nonce); // 32  \ envelope
+    out.extend_from_slice(&auth_tag); // 64  /
+    out.extend_from_slice(&export_key); // 64
+    Ok(out)
+}
+
+/// Client login step 1 (KE1). Returns client_state(64 = blind || eph_priv) ||
+/// KE1(96 = blinded || client_nonce || eph_pub). R keeps the state private and
+/// sends KE1 to the server.
+#[extendr]
+fn native_opaque_client_init(password: &[u8]) -> Vec<u8> {
+    let r = oprf_rand_scalar();
+    let blinded = r * oprf_hash_to_group(password);
+    let esk = oprf_rand_scalar();
+    let epk = RISTRETTO_BASEPOINT_POINT * esk;
+    let mut client_nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut client_nonce);
+
+    let mut out = Vec::with_capacity(160);
+    out.extend_from_slice(&r.to_bytes()); // state: blind
+    out.extend_from_slice(&esk.to_bytes()); // state: eph_priv
+    out.extend_from_slice(&blinded.compress().to_bytes()); // KE1: blinded
+    out.extend_from_slice(&client_nonce); // KE1: client_nonce
+    out.extend_from_slice(&epk.compress().to_bytes()); // KE1: eph_pub
+    out
+}
+
+/// Server login step (KE2). Inputs: server_priv(32), record(224 = ku ||
+/// client_pub || masking_key || envelope), KE1(96). Evaluates the OPRF, masks
+/// the credential response, runs its half of 3DH, and MACs the transcript.
+/// Returns KE2(320) || server_state(128 = session_key || expected_client_mac).
+#[extendr]
+fn native_opaque_server_respond(
+    server_priv: &[u8],
+    record: &[u8],
+    ke1: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if record.len() != 224 {
+        return Err("opaque: server record must be 224 bytes".into());
+    }
+    if ke1.len() != 96 {
+        return Err("opaque: KE1 must be 96 bytes".into());
+    }
+    let sk_s = oprf_key_scalar(server_priv)?;
+    let ku = oprf_scalar_from(&record[0..32], "oprf key")?;
+    let client_pub = oprf_point_from(&record[32..64], "client public key")?;
+    let masking_key = &record[64..128];
+    let envelope = &record[128..224]; // nonce(32) || auth_tag(64)
+    let blinded = oprf_point_from(&ke1[0..32], "blinded element")?;
+    let epk_u = oprf_point_from(&ke1[64..96], "client ephemeral key")?;
+
+    let evaluated = (ku * blinded).compress().to_bytes();
+    let server_pub = (RISTRETTO_BASEPOINT_POINT * sk_s).compress().to_bytes();
+
+    // Credential-response masking: hides server_pub+envelope so an attacker who
+    // does not know the password cannot even confirm the account exists.
+    let mut masking_nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut masking_nonce);
+    let pad = opaque_expand(
+        masking_key,
+        &opaque_info(b"CredentialResponsePad", &masking_nonce),
+        32 + 96,
+    );
+    let mut plain = Vec::with_capacity(128);
+    plain.extend_from_slice(&server_pub);
+    plain.extend_from_slice(envelope);
+    let masked_response = xor_bytes(&plain, &pad);
+
+    let esk_s = oprf_rand_scalar();
+    let epk_s = (RISTRETTO_BASEPOINT_POINT * esk_s).compress().to_bytes();
+    let mut server_nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut server_nonce);
+
+    // 3DH (server view): dh1=esk_s*epk_u, dh2=esk_s*pk_u, dh3=sk_s*epk_u.
+    let dh1 = (esk_s * epk_u).compress().to_bytes();
+    let dh2 = (esk_s * client_pub).compress().to_bytes();
+    let dh3 = (sk_s * epk_u).compress().to_bytes();
+    let mut ikm = Vec::with_capacity(96);
+    ikm.extend_from_slice(&dh1);
+    ikm.extend_from_slice(&dh2);
+    ikm.extend_from_slice(&dh3);
+
+    let mut preamble = Vec::new();
+    preamble.extend_from_slice(OPAQUE_DST);
+    preamble.extend_from_slice(ke1);
+    preamble.extend_from_slice(&evaluated);
+    preamble.extend_from_slice(&masking_nonce);
+    preamble.extend_from_slice(&masked_response);
+    preamble.extend_from_slice(&server_nonce);
+    preamble.extend_from_slice(&epk_s);
+    let ph = sha512_64(&preamble);
+
+    let prk = opaque_extract(&[], &ikm);
+    let handshake = opaque_expand(&prk, &opaque_info(b"HandshakeSecret", &ph), 64);
+    let session_key = opaque_expand(&prk, &opaque_info(b"SessionKey", &ph), 64);
+    let km2 = opaque_expand(&handshake, &opaque_info(b"ServerMAC", &[]), 64);
+    let km3 = opaque_expand(&handshake, &opaque_info(b"ClientMAC", &[]), 64);
+    let server_mac = opaque_mac(&km2, &ph);
+    let mut pre2 = preamble.clone();
+    pre2.extend_from_slice(&server_mac);
+    let expected_client_mac = opaque_mac(&km3, &sha512_64(&pre2));
+
+    let mut out = Vec::with_capacity(320 + 128);
+    out.extend_from_slice(&evaluated); // KE2 begins
+    out.extend_from_slice(&masking_nonce);
+    out.extend_from_slice(&masked_response);
+    out.extend_from_slice(&server_nonce);
+    out.extend_from_slice(&epk_s);
+    out.extend_from_slice(&server_mac); // KE2 ends (320)
+    out.extend_from_slice(&session_key); // server_state begins
+    out.extend_from_slice(&expected_client_mac);
+    Ok(out)
+}
+
+/// Client login step 2 (KE3). Inputs: password, client_state(64), KE1(96),
+/// KE2(320). Finalizes the OPRF, unmasks and verifies the envelope (a wrong
+/// password fails HERE), verifies the server's MAC (server authentication),
+/// then returns KE3(64 = client_mac) || session_key(64) || export_key(64).
+#[extendr]
+fn native_opaque_client_finish(
+    password: &[u8],
+    client_state: &[u8],
+    ke1: &[u8],
+    ke2: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if client_state.len() != 64 {
+        return Err("opaque: client state must be 64 bytes".into());
+    }
+    if ke1.len() != 96 {
+        return Err("opaque: KE1 must be 96 bytes".into());
+    }
+    if ke2.len() != 320 {
+        return Err("opaque: KE2 must be 320 bytes".into());
+    }
+    let r = oprf_scalar_from(&client_state[0..32], "blind scalar")?;
+    let esk_u = oprf_key_scalar(&client_state[32..64])?;
+
+    let evaluated = oprf_point_from(&ke2[0..32], "evaluated element")?;
+    let masking_nonce = &ke2[32..64];
+    let masked_response = &ke2[64..192];
+    let server_nonce = &ke2[192..224];
+    let epk_s = oprf_point_from(&ke2[224..256], "server ephemeral key")?;
+    let server_mac = &ke2[256..320];
+
+    let oprf_output = opaque_oprf_output(password, &r, &evaluated);
+    let rwd = opaque_randomized_pwd(&oprf_output);
+    let masking_key = opaque_expand(&rwd, &opaque_info(b"MaskingKey", &[]), 64);
+    let pad = opaque_expand(
+        &masking_key,
+        &opaque_info(b"CredentialResponsePad", masking_nonce),
+        128,
+    );
+    let plain = xor_bytes(masked_response, &pad);
+    let server_pub_bytes = &plain[0..32];
+    let envelope = &plain[32..128];
+    let server_pub = oprf_point_from(server_pub_bytes, "server public key")?;
+    let envelope_nonce = &envelope[0..32];
+    let auth_tag = &envelope[32..96];
+
+    let auth_key = opaque_expand(&rwd, &opaque_info(b"AuthKey", envelope_nonce), 64);
+    let export_key = opaque_expand(&rwd, &opaque_info(b"ExportKey", envelope_nonce), 64);
+    let seed = opaque_expand(&rwd, &opaque_info(b"PrivateKey", envelope_nonce), 32);
+    let client_sk = opaque_scalar_from_seed(&seed);
+    let client_pk = (RISTRETTO_BASEPOINT_POINT * client_sk).compress().to_bytes();
+
+    let mut tag_msg = Vec::with_capacity(96);
+    tag_msg.extend_from_slice(envelope_nonce);
+    tag_msg.extend_from_slice(server_pub_bytes);
+    tag_msg.extend_from_slice(&client_pk);
+    if !opaque_mac_verify(&auth_key, &tag_msg, auth_tag) {
+        return Err("opaque: authentication failed (wrong password or corrupted record)".into());
+    }
+
+    // 3DH (client view): dh1=esk_u*epk_s, dh2=sk_u*epk_s, dh3=esk_u*pk_s.
+    let dh1 = (esk_u * epk_s).compress().to_bytes();
+    let dh2 = (client_sk * epk_s).compress().to_bytes();
+    let dh3 = (esk_u * server_pub).compress().to_bytes();
+    let mut ikm = Vec::with_capacity(96);
+    ikm.extend_from_slice(&dh1);
+    ikm.extend_from_slice(&dh2);
+    ikm.extend_from_slice(&dh3);
+
+    let mut preamble = Vec::new();
+    preamble.extend_from_slice(OPAQUE_DST);
+    preamble.extend_from_slice(ke1);
+    preamble.extend_from_slice(&ke2[0..32]); // evaluated
+    preamble.extend_from_slice(masking_nonce);
+    preamble.extend_from_slice(masked_response);
+    preamble.extend_from_slice(server_nonce);
+    preamble.extend_from_slice(&ke2[224..256]); // epk_s
+    let ph = sha512_64(&preamble);
+
+    let prk = opaque_extract(&[], &ikm);
+    let handshake = opaque_expand(&prk, &opaque_info(b"HandshakeSecret", &ph), 64);
+    let session_key = opaque_expand(&prk, &opaque_info(b"SessionKey", &ph), 64);
+    let km2 = opaque_expand(&handshake, &opaque_info(b"ServerMAC", &[]), 64);
+    let km3 = opaque_expand(&handshake, &opaque_info(b"ClientMAC", &[]), 64);
+
+    if !opaque_mac_verify(&km2, &ph, server_mac) {
+        return Err("opaque: server authentication failed (wrong server or tampered KE2)".into());
+    }
+    let mut pre2 = preamble.clone();
+    pre2.extend_from_slice(server_mac);
+    let client_mac = opaque_mac(&km3, &sha512_64(&pre2));
+
+    let mut out = Vec::with_capacity(192);
+    out.extend_from_slice(&client_mac);
+    out.extend_from_slice(&session_key);
+    out.extend_from_slice(&export_key);
+    Ok(out)
+}
+
+/// Server login step 2. Verifies the client's KE3 MAC against the value it
+/// precomputed; on match the client proved knowledge of the password. Inputs:
+/// server_state(128), KE3(64). Returns the shared session_key(64) or errors.
+#[extendr]
+fn native_opaque_server_finish(
+    server_state: &[u8],
+    ke3: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if server_state.len() != 128 {
+        return Err("opaque: server state must be 128 bytes".into());
+    }
+    if ke3.len() != 64 {
+        return Err("opaque: KE3 must be 64 bytes".into());
+    }
+    let session_key = &server_state[0..64];
+    let expected = &server_state[64..128];
+    if !ct_eq(expected, ke3) {
+        return Err("opaque: client authentication failed (wrong password)".into());
+    }
+    Ok(session_key.to_vec())
+}
+
 // ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
@@ -961,5 +1401,12 @@ extendr_module! {
     fn native_psi_keygen;
     fn native_psi_hash_mask;
     fn native_psi_mask_points;
+    fn native_opaque_server_setup;
+    fn native_opaque_register_response;
+    fn native_opaque_register_finalize;
+    fn native_opaque_client_init;
+    fn native_opaque_server_respond;
+    fn native_opaque_client_finish;
+    fn native_opaque_server_finish;
     fn native_backend_version;
 }

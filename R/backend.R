@@ -62,6 +62,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_ibe_setup"))     caps <- c(caps, "ibe")
     if (has("wrap__native_oprf_keygen"))   caps <- c(caps, "oprf")
     if (has("wrap__native_psi_keygen"))    caps <- c(caps, "psi")
+    if (has("wrap__native_opaque_server_setup")) caps <- c(caps, "opaque")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -315,6 +316,62 @@ native_psi_hash_mask <- function(scalar, elements) {
 native_psi_mask_points <- function(scalar, points) {
   .require_native()
   .Call("wrap__native_psi_mask_points", as_raw(scalar), as_raw(points))
+}
+
+# ---- OPAQUE (asymmetric PAKE, OPAQUE-3DH over ristretto255) -----------------
+# Password-authenticated key exchange in which the server never sees the
+# password and stores no password-equivalent. R/opaque.R drives the two-party
+# registration + login (AKE); these are the raw message-step primitives. Every
+# state/message is a fixed-length raw blob (documented in lib.rs) so R models the
+# client/server boundary by simply choosing which blob it forwards.
+
+# Server long-term identity keypair: server_priv(32) || server_pub(32).
+native_opaque_server_setup <- function() {
+  .require_native()
+  .Call("wrap__native_opaque_server_setup")
+}
+
+# Server registration response to a blinded password element. Returns
+# ku(32) || evaluated(32) || server_pub(32); `ku` stays on the server.
+native_opaque_register_response <- function(blinded, server_pub) {
+  .require_native()
+  .Call("wrap__native_opaque_register_response", as_raw(blinded), as_raw(server_pub))
+}
+
+# Client registration finalize. Returns client_pub(32) || masking_key(64) ||
+# envelope(96) || export_key(64). First 192 bytes + ku form the server record.
+native_opaque_register_finalize <- function(password, blind_bundle, evaluated, server_pub) {
+  .require_native()
+  .Call("wrap__native_opaque_register_finalize", as_raw(password),
+        as_raw(blind_bundle), as_raw(evaluated), as_raw(server_pub))
+}
+
+# Client login step 1. Returns client_state(64) || KE1(96).
+native_opaque_client_init <- function(password) {
+  .require_native()
+  .Call("wrap__native_opaque_client_init", as_raw(password))
+}
+
+# Server login step (KE2). record = ku||client_pub||masking_key||envelope (224).
+# Returns KE2(320) || server_state(128).
+native_opaque_server_respond <- function(server_priv, record, ke1) {
+  .require_native()
+  .Call("wrap__native_opaque_server_respond", as_raw(server_priv), as_raw(record), as_raw(ke1))
+}
+
+# Client login step 2 (KE3). Returns KE3(64) || session_key(64) || export_key(64);
+# errors (fails closed) on a wrong password or a tampered/forged KE2.
+native_opaque_client_finish <- function(password, client_state, ke1, ke2) {
+  .require_native()
+  .Call("wrap__native_opaque_client_finish", as_raw(password),
+        as_raw(client_state), as_raw(ke1), as_raw(ke2))
+}
+
+# Server login step 2. Verifies KE3; returns the shared session_key(64) on
+# success, errors if the client failed to prove knowledge of the password.
+native_opaque_server_finish <- function(server_state, ke3) {
+  .require_native()
+  .Call("wrap__native_opaque_server_finish", as_raw(server_state), as_raw(ke3))
 }
 
 native_backends_status <- function() {

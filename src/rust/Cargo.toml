@@ -47,3 +47,6 @@ ibe = { version = "0.3", features = ["kv1"] }
 # BSD-3-Clause (license-clean for the MIT core); already in the build graph via
 # x25519-dalek, so it adds no heavy compile.
 curve25519-dalek = "4"
+# HMAC-SHA512 for the OPAQUE aPAKE (envelope MAC + 3DH transcript MACs). Pure
+# Rust (RustCrypto, MIT/Apache), already implied by the hkdf dependency.
+hmac = "0.12"

@@ -388,6 +388,8 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("oprf"))
   expect_equal("psi" %in% s$id[s$available],
                crypto_backend_available("psi"))
+  expect_equal("opaque" %in% s$id[s$available],
+               crypto_backend_available("opaque"))
 })
 
 test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
@@ -491,4 +493,62 @@ test_that("native PSI (if built): finds the true overlap, only the overlap, fail
   # native primitives fail closed on a malformed point buffer / bad scalar
   expect_error(native_psi_mask_points(native_psi_keygen(), as.raw(1:33)))  # not a multiple of 32
   expect_error(native_psi_hash_mask(sodium::random(31L), .psi_pack_elements("x")))  # 31-byte scalar
+})
+
+test_that("native OPAQUE (if built): registers, logs in with mutual auth, fails closed on wrong inputs", {
+  skip_if_not(crypto_backend_available("opaque"), "native OPAQUE backend not built")
+  pw <- "correct-horse-battery-staple"
+
+  kp <- opaque_server_setup()
+  expect_length(kp, 64L)
+
+  reg <- opaque_register(pw, kp)
+  expect_length(reg$record, 224L)      # ku || client_pub || masking_key || envelope
+  expect_length(reg$export_key, 64L)
+
+  # the stored record contains no verbatim copy of the password bytes
+  pwb <- charToRaw(pw); rec <- reg$record; m <- length(pwb)
+  contains_pw <- any(vapply(seq_len(length(rec) - m + 1L),
+                            function(i) identical(rec[i:(i + m - 1L)], pwb), logical(1)))
+  expect_false(contains_pw)
+
+  # correct password: mutual auth, identical session keys both sides, and the
+  # client recovers the SAME export key it got at registration
+  ok <- opaque_login(pw, reg$record, kp)
+  expect_true(ok$success)
+  expect_true(ok$keys_match)
+  expect_identical(as.raw(ok$session_key_client), as.raw(ok$session_key_server))
+  expect_identical(as.raw(ok$export_key), as.raw(reg$export_key))
+  expect_length(ok$session_key_client, 64L)
+
+  # a second login draws fresh blinds/ephemerals (different KE1) yet still agrees
+  # and yields the same stable export key
+  ok2 <- opaque_login(pw, reg$record, kp)
+  expect_true(ok2$success && ok2$keys_match)
+  expect_false(identical(ok2$transcript$ke1, ok$transcript$ke1))
+  expect_identical(as.raw(ok2$export_key), as.raw(reg$export_key))
+
+  # wrong password: the client aborts at the envelope check (no KE3 ever leaves)
+  bad <- opaque_login("wrong-password", reg$record, kp)
+  expect_false(bad$success)
+  expect_identical(bad$stage, "client")
+  expect_null(bad$transcript$ke3)
+
+  # a different server identity cannot satisfy the envelope bound to the first
+  cross <- opaque_login(pw, reg$record, opaque_server_setup())
+  expect_false(cross$success)
+
+  # tampering with KE2 in flight breaks the client's verification (fails closed)
+  ci <- native_opaque_client_init(pwb)
+  st <- ci[1:64]; ke1 <- ci[65:160]
+  sr <- native_opaque_server_respond(kp[1:32], reg$record, ke1)
+  ke2 <- sr[1:320]
+  ke2_bad <- ke2; ke2_bad[80] <- as.raw(bitwXor(as.integer(ke2_bad[80]), 1L))
+  expect_error(native_opaque_client_finish(pwb, st, ke1, ke2_bad))
+
+  # native primitives fail closed on malformed buffers
+  expect_error(native_opaque_server_respond(kp[1:32], reg$record, as.raw(1:10)))   # short KE1
+  expect_error(native_opaque_server_finish(sr[321:448], as.raw(rep(0L, 64L))))     # forged KE3
+  expect_error(native_opaque_register_finalize(pwb, as.raw(1:10),
+               reg$record[33:64], kp[33:64]))                                       # short blind bundle
 })

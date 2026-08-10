@@ -126,6 +126,28 @@ as the OPRF module.
 > normalise identifiers (case, whitespace, leading zeros) before comparing. Duplicates within a set
 > are ignored — it is a set operation.
 
+## Password login (OPAQUE) — a separate tab
+
+OPAQUE is an **asymmetric PAKE**: a client logs in by password while the **server never sees the
+password** and stores **no password-equivalent**. It is its own tab (native backend required),
+shipped as a single-machine two-party simulation.
+
+1. **Register** — choose a password. The server stores a per-user OPRF key, a masking key, the
+   client public key, and an authenticated envelope — never the password and never a hash of it.
+2. **Log in** — enter the password. The app runs an oblivious PRF plus a **3-message Diffie-Hellman
+   (3DH)** exchange. On success both sides derive the **same session key** and the client recovers a
+   stable **export key** (a password-derived key usable to encrypt data).
+3. **Inspect / download** the **KE1/KE2/KE3** transcript — the only bytes that cross between client
+   and server.
+
+A wrong password **fails closed** at the envelope check; a tampered or forged server message fails
+the client's server-authentication check; a client that cannot prove the password fails the server's
+check. This is OPAQUE-3DH on ristretto255 (internal-envelope mode), reusing the same curve as the
+OPRF module.
+
+> A stolen server record still forces a **per-user offline dictionary attack**, slowed by Argon2 —
+> the record leaks no plaintext password. Honest-but-curious, two-party model.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -166,6 +188,12 @@ as the OPRF module.
   Only masked curve points cross between parties, never the raw lists. It is a two-party protocol
   shipped as a single-machine simulation; a genuine cross-organisation run needs the counterparty to
   execute their half. Match keys are compared exactly, so normalise them first.
+- **Password login (OPAQUE)** is an **asymmetric PAKE**: the server never learns the password and its
+  stored record contains no password-equivalent, so a database theft still forces a per-user offline
+  dictionary attack (slowed by Argon2). Both sides derive the same session key and the client recovers
+  a stable export key. It is honest-but-curious and shipped as a single-machine two-party simulation
+  (client and server run in one process); a genuine cross-machine login needs the counterparty to run
+  their half. It authenticates a password — it does not by itself encrypt your file.
 - **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
   part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
   separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to

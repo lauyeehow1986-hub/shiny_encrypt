@@ -136,5 +136,23 @@ per-party secret scalar; the group is commutative, so a shared value lands on th
 point while everything else looks random. Only masked points cross the wire, never the raw lists.
 PSI is honest-but-curious: the matching party learns the overlap and the other set size, nothing more.
 Values are matched exactly as text, so normalise case and spacing first; duplicates within a set are
-ignored. It reuses the same curve as the OPRF module.</p>'
+ignored. It reuses the same curve as the OPRF module.</p>
+<h4>Password login (OPAQUE) &mdash; a separate tab</h4>
+<p>OPAQUE is an asymmetric password-authenticated key exchange: a client logs in by password while the
+server never sees the password and stores no password-equivalent. It is its own tab (native backend
+required), shipped as a single-machine two-party simulation.</p>
+<ol>
+  <li><b>Register</b> &mdash; choose a password. The server stores a per-user OPRF key, a masking key,
+      the client public key, and an authenticated envelope &mdash; never the password and never a hash
+      of it.</li>
+  <li><b>Log in</b> &mdash; enter the password. The app runs an oblivious PRF plus a 3-message
+      Diffie-Hellman (3DH) exchange. On success both sides derive the same session key and the client
+      recovers a stable export key (a password-derived key usable to encrypt data).</li>
+  <li><b>Inspect</b> the KE1/KE2/KE3 transcript &mdash; the only bytes that cross between client and
+      server &mdash; and download it.</li>
+</ol>
+<p class="text-muted small">A wrong password fails closed at the envelope check; a tampered or forged
+server message fails the client server-authentication check; a client that cannot prove the password
+fails the server check. A stolen server record still forces a per-user offline dictionary attack,
+slowed by Argon2. This is OPAQUE-3DH on ristretto255, reusing the same curve as the OPRF module.</p>'
 }

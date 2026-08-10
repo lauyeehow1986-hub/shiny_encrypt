@@ -90,8 +90,9 @@ register_all_schemes <- function() {
     "FROST threshold signatures (t-of-n)", "the native FROST crate",
     "Shared authorization (simulated). Build the native package to enable.", cap("frost"))
   .register_scheme_placeholder("opaque", "Interactive",
-    "PAKE / OPAQUE", "the native OPAQUE crate",
-    "Password-authenticated key exchange (simulated). Build to enable.", cap("opaque"))
+    "PAKE / OPAQUE (asymmetric PAKE)", "the native curve25519-dalek OPAQUE",
+    "Log in by password where the server never sees the password and stores no password-equivalent — use the 'Password login (OPAQUE)' tab. OPAQUE-3DH on ristretto255 (reuses the OPRF group): registration hides the password behind an oblivious PRF and a per-user key; login runs the OPRF plus a 3-message Diffie-Hellman so both sides derive the same session key (and the client a stable export key). A stolen server record still forces a per-user offline dictionary attack, slowed by Argon2. Shipped as a single-machine two-party simulation with an exportable KE1/KE2/KE3 transcript.",
+    cap("opaque"))
 
   # Stub (no secure production implementation exists anywhere)
   stub <- function(id, label, why)

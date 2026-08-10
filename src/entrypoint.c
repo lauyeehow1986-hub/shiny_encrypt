@@ -40,6 +40,13 @@ extern SEXP wrap__native_oprf_finalize(SEXP input, SEXP blind_bundle, SEXP evalu
 extern SEXP wrap__native_psi_keygen(void);
 extern SEXP wrap__native_psi_hash_mask(SEXP scalar, SEXP elements);
 extern SEXP wrap__native_psi_mask_points(SEXP scalar, SEXP points);
+extern SEXP wrap__native_opaque_server_setup(void);
+extern SEXP wrap__native_opaque_register_response(SEXP blinded, SEXP server_pub);
+extern SEXP wrap__native_opaque_register_finalize(SEXP password, SEXP blind_bundle, SEXP evaluated, SEXP server_pub);
+extern SEXP wrap__native_opaque_client_init(SEXP password);
+extern SEXP wrap__native_opaque_server_respond(SEXP server_priv, SEXP record, SEXP ke1);
+extern SEXP wrap__native_opaque_client_finish(SEXP password, SEXP client_state, SEXP ke1, SEXP ke2);
+extern SEXP wrap__native_opaque_server_finish(SEXP server_state, SEXP ke3);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -73,6 +80,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_psi_keygen",      (DL_FUNC) &wrap__native_psi_keygen,      0},
     {"wrap__native_psi_hash_mask",   (DL_FUNC) &wrap__native_psi_hash_mask,   2},
     {"wrap__native_psi_mask_points", (DL_FUNC) &wrap__native_psi_mask_points, 2},
+    {"wrap__native_opaque_server_setup",      (DL_FUNC) &wrap__native_opaque_server_setup,      0},
+    {"wrap__native_opaque_register_response", (DL_FUNC) &wrap__native_opaque_register_response, 2},
+    {"wrap__native_opaque_register_finalize", (DL_FUNC) &wrap__native_opaque_register_finalize, 4},
+    {"wrap__native_opaque_client_init",       (DL_FUNC) &wrap__native_opaque_client_init,       1},
+    {"wrap__native_opaque_server_respond",    (DL_FUNC) &wrap__native_opaque_server_respond,    3},
+    {"wrap__native_opaque_client_finish",     (DL_FUNC) &wrap__native_opaque_client_finish,     4},
+    {"wrap__native_opaque_server_finish",     (DL_FUNC) &wrap__native_opaque_server_finish,     2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };
