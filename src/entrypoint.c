@@ -54,6 +54,10 @@ extern SEXP wrap__native_frost_aggregate(SEXP package, SEXP msg, SEXP group_pk, 
 extern SEXP wrap__native_frost_verify(SEXP group_pk, SEXP msg, SEXP signature);
 extern SEXP wrap__native_zk_range_prove(SEXP value, SEXP min_bytes, SEXP max_bytes);
 extern SEXP wrap__native_zk_range_verify(SEXP proof);
+extern SEXP wrap__native_tfhe_keygen(void);
+extern SEXP wrap__native_tfhe_encrypt(SEXP client_key, SEXP values_le);
+extern SEXP wrap__native_tfhe_sum(SEXP server_key, SEXP cts);
+extern SEXP wrap__native_tfhe_decrypt(SEXP client_key, SEXP ct);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -101,6 +105,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_frost_verify",    (DL_FUNC) &wrap__native_frost_verify,    3},
     {"wrap__native_zk_range_prove",  (DL_FUNC) &wrap__native_zk_range_prove,  3},
     {"wrap__native_zk_range_verify", (DL_FUNC) &wrap__native_zk_range_verify, 1},
+    {"wrap__native_tfhe_keygen",     (DL_FUNC) &wrap__native_tfhe_keygen,     0},
+    {"wrap__native_tfhe_encrypt",    (DL_FUNC) &wrap__native_tfhe_encrypt,    2},
+    {"wrap__native_tfhe_sum",        (DL_FUNC) &wrap__native_tfhe_sum,        2},
+    {"wrap__native_tfhe_decrypt",    (DL_FUNC) &wrap__native_tfhe_decrypt,    2},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

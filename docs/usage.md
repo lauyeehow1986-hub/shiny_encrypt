@@ -186,6 +186,28 @@ A **false statement cannot be proved** — if the value is outside the range the
 produced (it fails closed) — and a **tampered proof does not verify**. This is a transparent Pedersen +
 Chaum-Pedersen range proof on ristretto255, reusing the same curve as the OPRF module.
 
+## Compute on ciphertext (FHE) — a separate tab
+
+**Fully homomorphic encryption** lets an untrusted server **compute on data while it stays encrypted**.
+This tab (native backend required) demonstrates it with a homomorphic **sum**, using Zama **tfhe-rs**
+(TFHE) on the CPU. It is its own tab and is **size-guarded** — every operation is a real bootstrapped
+circuit, so the number of values is capped.
+
+1. **Choose the numbers** — type comma-separated non-negative integers, or upload a dataset and pick a
+   **numeric column** (values are rounded to non-negative integers). Each number is encrypted under a
+   fresh secret **client key**.
+2. **Encrypt and compute** — press the button. The app hands the ciphertexts and **only the evaluation
+   (server) key** to the homomorphic sum, which adds them **without decrypting**, then decrypts the
+   single result with the client key.
+3. **Read the transcript** — it shows the decrypted total equals the plaintext sum, the client/server
+   key and ciphertext sizes, and a sample ciphertext (random-looking bytes). You can download the
+   encrypted result.
+
+The **server key cannot decrypt** anything — there is no such operation — so the server learns neither
+the inputs nor the total. Because TFHE keys and ciphertexts are large, this is a bounded demonstration,
+not a bulk encryptor: it shows the property (compute on data you cannot read), size-guarded to stay
+within the machine's memory and time budget.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -254,6 +276,14 @@ Chaum-Pedersen range proof on ristretto255, reusing the same curve as the OPRF m
   verified, so wrong-receiver or tampered fragments fail closed. Whoever holds the re-encryption key
   plus a cooperating proxy can re-target the ciphertext to the named receiver — guard re-encryption
   keys accordingly.
+- **Compute on ciphertext (FHE)** demonstrates **fully homomorphic encryption** (Zama tfhe-rs, TFHE,
+  CPU): a server **adds encrypted numbers without ever decrypting them**. The client key encrypts and
+  decrypts; the **server key only computes and cannot decrypt**, so the untrusted party learns neither
+  the inputs nor the total. It is **not a bulk file encryptor** — TFHE keys and ciphertexts are large
+  and every operation is a bootstrapped circuit, so the tab is **size-guarded and capped** to a small
+  number of values and shows the key/ciphertext sizes. Values are non-negative whole numbers up to 2⁵³,
+  and the plaintext sum must stay under 2⁵³ so the exact-match check holds. It shows the property
+  (outsource an aggregate to a party you do not trust with the raw data), not a production pipeline.
 - **Differential privacy** is not encryption and not de-identification: it releases a *noisy
   aggregate*, not the rows. The guarantee holds only if you respect the **budget** — every release
   spends ε, and spending too much (or re-running until the noise looks small) erodes the protection.

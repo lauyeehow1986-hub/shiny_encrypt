@@ -65,6 +65,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_opaque_server_setup")) caps <- c(caps, "opaque")
     if (has("wrap__native_frost_keygen"))  caps <- c(caps, "frost")
     if (has("wrap__native_zk_range_prove")) caps <- c(caps, "zk-range")
+    if (has("wrap__native_tfhe_keygen"))   caps <- c(caps, "tfhe")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -433,6 +434,28 @@ native_zk_range_prove <- function(value, min_bytes, max_bytes) {
 native_zk_range_verify <- function(proof) {
   .require_native()
   identical(.Call("wrap__native_zk_range_verify", as_raw(proof)), 1L)
+}
+
+# ---- Fully homomorphic encryption (TFHE, Zama tfhe-rs) — compute on ciphertext -
+# Keys and ciphertexts cross as bincode-serialized raw blobs with u32 big-endian
+# length prefixes (see R/fhe.R). keygen -> [u32 ck_len][ck][sk]; encrypt ->
+# [u32 n][u32 ct_len][ct]*n; sum takes ONLY the server key + ciphertexts and
+# returns one result ciphertext; decrypt returns the u64 as 8-byte little-endian.
+native_tfhe_keygen <- function() {
+  .require_native()
+  .Call("wrap__native_tfhe_keygen")
+}
+native_tfhe_encrypt <- function(client_key, values_le) {
+  .require_native()
+  .Call("wrap__native_tfhe_encrypt", as_raw(client_key), as_raw(values_le))
+}
+native_tfhe_sum <- function(server_key, cts) {
+  .require_native()
+  .Call("wrap__native_tfhe_sum", as_raw(server_key), as_raw(cts))
+}
+native_tfhe_decrypt <- function(client_key, ct) {
+  .require_native()
+  .Call("wrap__native_tfhe_decrypt", as_raw(client_key), as_raw(ct))
 }
 
 native_backends_status <- function() {

@@ -193,5 +193,26 @@ a proof from the file alone.</p>
 <p class="text-muted small">A false statement cannot be proved &mdash; if the value is outside the range
 the proof simply cannot be produced (it fails closed) &mdash; and a tampered proof does not verify. This
 is a transparent Pedersen + Chaum-Pedersen range proof on ristretto255, reusing the same curve as the
-OPRF module (no new dependency). It protects a single number, not the whole file.</p>'
+OPRF module (no new dependency). It protects a single number, not the whole file.</p>
+
+<h4>Compute on ciphertext (FHE) &mdash; a separate tab</h4>
+<p>Fully homomorphic encryption lets an untrusted server compute on data while it stays encrypted. This
+tab (native backend required) shows it with a homomorphic sum, using the Zama tfhe-rs library (TFHE) on
+the CPU. Because every operation is a real bootstrapped circuit and the keys and ciphertexts are large,
+the tab is size-guarded and the number of values is capped.</p>
+<ol>
+  <li><b>Choose the numbers</b> &mdash; type comma-separated non-negative integers, or point at a dataset
+      and pick a numeric column (values are rounded to non-negative integers). Each number is encrypted
+      under a fresh secret client key.</li>
+  <li><b>Encrypt and compute</b> &mdash; the app hands the ciphertexts and only the evaluation (server)
+      key to the homomorphic sum, which adds them without decrypting, then decrypts the single result
+      with the client key.</li>
+  <li><b>Read the transcript</b> &mdash; it shows the decrypted total matches the plaintext sum, the
+      client and server key sizes, the ciphertext size, and a sample ciphertext. You can download the
+      encrypted result.</li>
+</ol>
+<p class="text-muted small">The server key cannot decrypt anything &mdash; there is no such operation
+&mdash; so the server learns neither the inputs nor the total. This is a bounded demonstration of the
+property (compute on data you cannot read), not a bulk file encryptor: TFHE keys and ciphertexts are
+large, so it is size-guarded to stay within the memory and time budget.</p>'
 }

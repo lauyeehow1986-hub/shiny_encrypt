@@ -13,8 +13,10 @@ crate-type = ["staticlib"]
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+# Thin LTO (not fat) so the very large tfhe-rs crate does not make the final
+# staticlib link explode in time/memory; still gives most of fat-LTO's benefit.
+lto = "thin"
+codegen-units = 16
 
 [dependencies]
 extendr-api = "0.7"
@@ -50,3 +52,8 @@ curve25519-dalek = "4"
 # HMAC-SHA512 for the OPAQUE aPAKE (envelope MAC + 3DH transcript MACs). Pure
 # Rust (RustCrypto, MIT/Apache), already implied by the hkdf dependency.
 hmac = "0.12"
+# Fully homomorphic encryption (Zama tfhe-rs, TFHE) — compute on ciphertext.
+# BSD-3-Clause-Clear, pure Rust, CPU backend (no CUDA build). Large crate; the
+# FHE tab is size-guarded. bincode serializes keys/ciphertexts across the FFI.
+tfhe = { version = "1.7", features = ["integer"] }
+bincode = "1"

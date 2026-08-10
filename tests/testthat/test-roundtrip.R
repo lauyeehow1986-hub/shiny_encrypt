@@ -394,6 +394,8 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("frost"))
   expect_equal("zk-range" %in% s$id[s$available],
                crypto_backend_available("zk-range"))
+  expect_equal("tfhe" %in% s$id[s$available],
+               crypto_backend_available("tfhe"))
 })
 
 test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
@@ -660,4 +662,51 @@ test_that("native ZK (if built): range proof hides the value, verifies, fails cl
   expect_true(d_ok$success && d_ok$verified && d_ok$tamper_rejected)
   d_no <- zk_demo(50, 100, 500)
   expect_false(d_no$success)
+})
+
+test_that("native FHE (if built): server sums ciphertext without the key, decrypts correctly", {
+  skip_if_not(crypto_backend_available("tfhe"), "native TFHE backend not built")
+
+  # Honest end-to-end: encrypt values, sum them holding ONLY the server key,
+  # decrypt the single result with the client key — it equals the plaintext sum.
+  d <- fhe_sum_demo(c(12, 40, 7, 105, 33))
+  expect_true(d$success)
+  expect_equal(d$plaintext_sum, 197)
+  expect_equal(d$fhe_result, 197)
+  expect_true(d$correct)
+  expect_true(d$server_key_bytes > 0 && d$client_key_bytes > 0)
+  expect_true(d$ct_each_bytes > 0)
+
+  # Non-integers are rounded; larger magnitudes still add exactly.
+  e <- fhe_sum_demo(c(2.4, 3.6, 1000000))   # 2 + 4 + 1000000
+  expect_equal(e$fhe_result, 1000006)
+  expect_true(e$correct)
+
+  # Low-level boundary: the sum function receives ONLY the server key and the
+  # ciphertexts; the result decrypts back with the client key.
+  kk <- native_tfhe_keygen()
+  ck_len <- .fhe_u32be(kk[1:4])
+  ck <- kk[(4L + 1L):(4L + ck_len)]
+  sk <- kk[(4L + ck_len + 1L):length(kk)]
+  cts <- native_tfhe_encrypt(ck, .fhe_pack_values(c(5, 6, 7)))
+  res <- native_tfhe_sum(sk, cts)
+  expect_equal(.fhe_read_u64le(native_tfhe_decrypt(ck, res)), 18)
+
+  # Security: the server key CANNOT recover the plaintext — feeding it where a
+  # client key is expected never yields the true value (errors or garbles).
+  expect_false(isTRUE(tryCatch(
+    .fhe_read_u64le(native_tfhe_decrypt(sk, res)) == 18,
+    error = function(e) FALSE)))
+
+  # Guards fail closed and cheaply (before any keygen): empty, negative, and the
+  # per-run value cap.
+  expect_error(fhe_sum_demo(numeric(0)))
+  expect_error(fhe_sum_demo(c(1, -2, 3)))
+  old <- getOption("shinyEncrypt.fhe.max"); options(shinyEncrypt.fhe.max = 3)
+  expect_error(fhe_sum_demo(c(1, 2, 3, 4)))
+  options(shinyEncrypt.fhe.max = old)
+
+  # Malformed native inputs error rather than silently pass.
+  expect_error(native_tfhe_sum(sk, as.raw(1:4)))       # ciphertext blob too short
+  expect_error(native_tfhe_encrypt(ck, as.raw(1:7)))   # values not a multiple of 8
 })

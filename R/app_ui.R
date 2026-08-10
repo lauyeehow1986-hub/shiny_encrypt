@@ -265,7 +265,8 @@ app_ui <- function() {
     bslib::nav_panel("Set intersection (PSI)", ui_psi()),
     bslib::nav_panel("Password login (OPAQUE)", ui_opaque()),
     bslib::nav_panel("Threshold signature (FROST)", ui_frost()),
-    bslib::nav_panel("Zero-knowledge proof (ZK)", ui_zk())
+    bslib::nav_panel("Zero-knowledge proof (ZK)", ui_zk()),
+    bslib::nav_panel("Compute on ciphertext (FHE)", ui_fhe())
   )
   # Proxy Re-Encryption is an optional GPL companion; show its tab only when installed.
   if (pre_companion_available())

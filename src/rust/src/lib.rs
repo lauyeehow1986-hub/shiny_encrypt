@@ -1921,6 +1921,115 @@ fn native_zk_range_verify(proof: &[u8]) -> std::result::Result<i32, String> {
 }
 
 // ============================================================================
+// Fully homomorphic encryption (Zama tfhe-rs) — compute on ciphertext.
+//
+// A client holds the secret client key and encrypts u64 values; a server holds
+// only the (public) evaluation/server key and can homomorphically ADD the
+// ciphertexts without ever decrypting. Keys and ciphertexts cross the FFI as
+// bincode-serialized byte blobs with u32 big-endian length prefixes so R can
+// split them without any struct marshalling. The server key cannot decrypt.
+// ============================================================================
+
+fn tfhe_u32_be(n: usize) -> [u8; 4] {
+    (n as u32).to_be_bytes()
+}
+fn tfhe_read_u32_be(b: &[u8]) -> usize {
+    ((b[0] as usize) << 24) | ((b[1] as usize) << 16) | ((b[2] as usize) << 8) | (b[3] as usize)
+}
+
+/// Generate a fresh (client_key, server_key) pair. Returns
+/// [u32_be client_key_len][client_key bytes][server_key bytes].
+#[extendr]
+fn native_tfhe_keygen() -> std::result::Result<Vec<u8>, String> {
+    let config = tfhe::ConfigBuilder::default().build();
+    let (client_key, server_key) = tfhe::generate_keys(config);
+    let ck = bincode::serialize(&client_key).map_err(|e| format!("client key serialize: {e}"))?;
+    let sk = bincode::serialize(&server_key).map_err(|e| format!("server key serialize: {e}"))?;
+    let mut out = Vec::with_capacity(4 + ck.len() + sk.len());
+    out.extend_from_slice(&tfhe_u32_be(ck.len()));
+    out.extend_from_slice(&ck);
+    out.extend_from_slice(&sk);
+    Ok(out)
+}
+
+/// Encrypt n u64 values (given as n contiguous 8-byte little-endian words) under
+/// the client key. Returns [u32_be n][u32_be ct_len][ct]*n (equal-length cts).
+#[extendr]
+fn native_tfhe_encrypt(client_key: &[u8], values_le: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    use tfhe::prelude::*;
+    if values_le.is_empty() || values_le.len() % 8 != 0 {
+        return Err("values blob must be a non-empty multiple of 8 bytes".into());
+    }
+    let ck: tfhe::ClientKey =
+        bincode::deserialize(client_key).map_err(|e| format!("client key deserialize: {e}"))?;
+    let n = values_le.len() / 8;
+    let mut cts: Vec<Vec<u8>> = Vec::with_capacity(n);
+    let mut ct_len = 0usize;
+    for i in 0..n {
+        let v = zk_u64(&values_le[i * 8..i * 8 + 8], "value")?;
+        let ct = tfhe::FheUint64::encrypt(v, &ck);
+        let b = bincode::serialize(&ct).map_err(|e| format!("ciphertext serialize: {e}"))?;
+        if i == 0 {
+            ct_len = b.len();
+        } else if b.len() != ct_len {
+            return Err("ciphertext lengths differ (unexpected)".into());
+        }
+        cts.push(b);
+    }
+    let mut out = Vec::with_capacity(8 + n * ct_len);
+    out.extend_from_slice(&tfhe_u32_be(n));
+    out.extend_from_slice(&tfhe_u32_be(ct_len));
+    for b in cts {
+        out.extend_from_slice(&b);
+    }
+    Ok(out)
+}
+
+/// Homomorphically sum the ciphertexts using ONLY the server key. Input is the
+/// blob produced by native_tfhe_encrypt. Returns one serialized result ciphertext.
+#[extendr]
+fn native_tfhe_sum(server_key: &[u8], cts: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    if cts.len() < 8 {
+        return Err("ciphertext blob too short".into());
+    }
+    let n = tfhe_read_u32_be(&cts[0..4]);
+    let ct_len = tfhe_read_u32_be(&cts[4..8]);
+    if n == 0 {
+        return Err("no ciphertexts to sum".into());
+    }
+    if cts.len() != 8 + n * ct_len {
+        return Err("ciphertext blob length mismatch".into());
+    }
+    let sk: tfhe::ServerKey =
+        bincode::deserialize(server_key).map_err(|e| format!("server key deserialize: {e}"))?;
+    tfhe::set_server_key(sk);
+    let mut acc: Option<tfhe::FheUint64> = None;
+    for i in 0..n {
+        let off = 8 + i * ct_len;
+        let ct: tfhe::FheUint64 = bincode::deserialize(&cts[off..off + ct_len])
+            .map_err(|e| format!("ciphertext deserialize: {e}"))?;
+        acc = Some(match acc {
+            None => ct,
+            Some(a) => &a + &ct,
+        });
+    }
+    let res = acc.unwrap();
+    bincode::serialize(&res).map_err(|e| format!("result serialize: {e}"))
+}
+
+/// Decrypt a result ciphertext with the client key. Returns the u64 as 8-byte LE.
+#[extendr]
+fn native_tfhe_decrypt(client_key: &[u8], ct: &[u8]) -> std::result::Result<Vec<u8>, String> {
+    use tfhe::prelude::*;
+    let ck: tfhe::ClientKey =
+        bincode::deserialize(client_key).map_err(|e| format!("client key deserialize: {e}"))?;
+    let c: tfhe::FheUint64 =
+        bincode::deserialize(ct).map_err(|e| format!("ciphertext deserialize: {e}"))?;
+    let v: u64 = c.decrypt(&ck);
+    Ok(v.to_le_bytes().to_vec())
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
