@@ -87,8 +87,9 @@ register_all_schemes <- function() {
     "Find which identifiers two parties share without revealing the rest — use the 'Set intersection (PSI)' tab. ECDH-PSI on ristretto255 (reuses the OPRF group): each party masks its set with a secret scalar, only masked (random-looking) points cross the wire, and equal double-masked points mark the overlap. Shipped as a single-machine two-party simulation with an exportable transcript.",
     cap("psi"))
   .register_scheme_placeholder("frost", "Interactive",
-    "FROST threshold signatures (t-of-n)", "the native FROST crate",
-    "Shared authorization (simulated). Build the native package to enable.", cap("frost"))
+    "FROST threshold signatures (t-of-n)", "the native curve25519-dalek FROST",
+    "Split one signing key across n custodians so any t of them can jointly produce a single ordinary Schnorr signature — use the 'Threshold signature (FROST)' tab. A trusted dealer shares the key via a degree-(t-1) polynomial; signing runs two rounds (nonce commitments, then partial signatures bound to the whole commitment set) and the coordinator sums the partials into one (R, z) that verifies under the single group public key. No custodian ever holds the whole key, and a sub-threshold quorum fails closed. FROST on ristretto255 (reuses the OPRF group), shipped as a single-machine simulation with an exportable transcript.",
+    cap("frost"))
   .register_scheme_placeholder("opaque", "Interactive",
     "PAKE / OPAQUE (asymmetric PAKE)", "the native curve25519-dalek OPAQUE",
     "Log in by password where the server never sees the password and stores no password-equivalent — use the 'Password login (OPAQUE)' tab. OPAQUE-3DH on ristretto255 (reuses the OPRF group): registration hides the password behind an oblivious PRF and a per-user key; login runs the OPRF plus a 3-message Diffie-Hellman so both sides derive the same session key (and the client a stable export key). A stolen server record still forces a per-user offline dictionary attack, slowed by Argon2. Shipped as a single-machine two-party simulation with an exportable KE1/KE2/KE3 transcript.",

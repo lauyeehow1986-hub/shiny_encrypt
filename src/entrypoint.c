@@ -47,6 +47,11 @@ extern SEXP wrap__native_opaque_client_init(SEXP password);
 extern SEXP wrap__native_opaque_server_respond(SEXP server_priv, SEXP record, SEXP ke1);
 extern SEXP wrap__native_opaque_client_finish(SEXP password, SEXP client_state, SEXP ke1, SEXP ke2);
 extern SEXP wrap__native_opaque_server_finish(SEXP server_state, SEXP ke3);
+extern SEXP wrap__native_frost_keygen(SEXP t, SEXP n);
+extern SEXP wrap__native_frost_commit(void);
+extern SEXP wrap__native_frost_sign(SEXP signing_share, SEXP identifier, SEXP nonce_secret, SEXP msg, SEXP package, SEXP group_pk);
+extern SEXP wrap__native_frost_aggregate(SEXP package, SEXP msg, SEXP group_pk, SEXP shares);
+extern SEXP wrap__native_frost_verify(SEXP group_pk, SEXP msg, SEXP signature);
 extern SEXP wrap__native_backend_version(void);
 
 static const R_CallMethodDef CallEntries[] = {
@@ -87,6 +92,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"wrap__native_opaque_server_respond",    (DL_FUNC) &wrap__native_opaque_server_respond,    3},
     {"wrap__native_opaque_client_finish",     (DL_FUNC) &wrap__native_opaque_client_finish,     4},
     {"wrap__native_opaque_server_finish",     (DL_FUNC) &wrap__native_opaque_server_finish,     2},
+    {"wrap__native_frost_keygen",    (DL_FUNC) &wrap__native_frost_keygen,    2},
+    {"wrap__native_frost_commit",    (DL_FUNC) &wrap__native_frost_commit,    0},
+    {"wrap__native_frost_sign",      (DL_FUNC) &wrap__native_frost_sign,      6},
+    {"wrap__native_frost_aggregate", (DL_FUNC) &wrap__native_frost_aggregate, 4},
+    {"wrap__native_frost_verify",    (DL_FUNC) &wrap__native_frost_verify,    3},
     {"wrap__native_backend_version", (DL_FUNC) &wrap__native_backend_version, 0},
     {NULL, NULL, 0}
 };

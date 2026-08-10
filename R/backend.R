@@ -63,6 +63,7 @@ load_native_backend <- function(quiet = TRUE) {
     if (has("wrap__native_oprf_keygen"))   caps <- c(caps, "oprf")
     if (has("wrap__native_psi_keygen"))    caps <- c(caps, "psi")
     if (has("wrap__native_opaque_server_setup")) caps <- c(caps, "opaque")
+    if (has("wrap__native_frost_keygen"))  caps <- c(caps, "frost")
     options(shinyEncrypt.native.enabled = TRUE,
             shinyEncrypt.native.caps = caps,
             shinyEncrypt.native.version = ver)
@@ -372,6 +373,50 @@ native_opaque_client_finish <- function(password, client_state, ke1, ke2) {
 native_opaque_server_finish <- function(server_state, ke3) {
   .require_native()
   .Call("wrap__native_opaque_server_finish", as_raw(server_state), as_raw(ke3))
+}
+
+# ---- FROST (t-of-n threshold Schnorr signatures, ristretto255) --------------
+# A group of n custodians shares one signing key so that any t of them can
+# jointly produce a single ordinary Schnorr signature, and no single custodian
+# ever holds the whole key. R/frost.R drives the trusted-dealer keygen and the
+# two-round signing across a chosen quorum; these are the raw step primitives,
+# every message a fixed-length raw blob (layouts documented in lib.rs).
+
+# Trusted-dealer keygen. Returns group_pk(32) || n*(id u16 be || share(32)).
+native_frost_keygen <- function(t, n) {
+  .require_native()
+  .Call("wrap__native_frost_keygen", as.integer(t), as.integer(n))
+}
+
+# Round 1 commit for one signer. Returns nonce_secret(64) || commitment(64).
+native_frost_commit <- function() {
+  .require_native()
+  .Call("wrap__native_frost_commit")
+}
+
+# Round 2 signature share for `identifier`. `package` is the shared commitment
+# set (see .frost_pack_package); returns z_i(32). Fails closed if this signer's
+# commitment is absent or does not match its nonce.
+native_frost_sign <- function(signing_share, identifier, nonce_secret, msg, package, group_pk) {
+  .require_native()
+  .Call("wrap__native_frost_sign", as_raw(signing_share), as.integer(identifier),
+        as_raw(nonce_secret), as_raw(msg), as_raw(package), as_raw(group_pk))
+}
+
+# Combine shares (k*32 bytes) into a signature(64 = R||z); verifies internally
+# and errors (fails closed) if a share is bad or missing.
+native_frost_aggregate <- function(package, msg, group_pk, shares) {
+  .require_native()
+  .Call("wrap__native_frost_aggregate", as_raw(package), as_raw(msg),
+        as_raw(group_pk), as_raw(shares))
+}
+
+# Verify a 64-byte signature under the group public key. Returns TRUE/FALSE;
+# errors only on malformed input.
+native_frost_verify <- function(group_pk, msg, signature) {
+  .require_native()
+  identical(.Call("wrap__native_frost_verify", as_raw(group_pk), as_raw(msg),
+                  as_raw(signature)), 1L)
 }
 
 native_backends_status <- function() {

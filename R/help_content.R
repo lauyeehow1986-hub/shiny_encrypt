@@ -154,5 +154,23 @@ required), shipped as a single-machine two-party simulation.</p>
 <p class="text-muted small">A wrong password fails closed at the envelope check; a tampered or forged
 server message fails the client server-authentication check; a client that cannot prove the password
 fails the server check. A stolen server record still forces a per-user offline dictionary attack,
-slowed by Argon2. This is OPAQUE-3DH on ristretto255, reusing the same curve as the OPRF module.</p>'
+slowed by Argon2. This is OPAQUE-3DH on ristretto255, reusing the same curve as the OPRF module.</p>
+<h4>Threshold signature (FROST) &mdash; a separate tab</h4>
+<p>FROST lets a group of n custodians share one signing key so that any t of them can jointly produce a
+single ordinary Schnorr signature &mdash; and no custodian ever holds the whole key. It is its own tab
+(native backend required), shipped as a single-machine simulation.</p>
+<ol>
+  <li><b>Deal the group key</b> &mdash; choose n custodians and a threshold t. A trusted dealer splits
+      the key with a degree-(t&minus;1) polynomial and hands each custodian one 32-byte share. The
+      single group public key is the verification key.</li>
+  <li><b>Sign with a quorum</b> &mdash; type a message and tick which custodians sign. Each first
+      commits to fresh nonces, then emits a partial signature bound to the whole commitment set; the
+      coordinator sums the partials into one signature.</li>
+  <li><b>Inspect and download</b> the transcript &mdash; the round-one commitments, each partial, and
+      the aggregated signature &mdash; and confirm it verifies under the group public key.</li>
+</ol>
+<p class="text-muted small">Any t custodians sign; a smaller quorum fails closed &mdash; the shares no
+longer interpolate the group secret, so the combined signature does not verify and aggregation is
+rejected. Binding factors over the whole commitment set defeat known attacks on naive multi-signing.
+This is FROST on ristretto255, reusing the same curve as the OPRF module.</p>'
 }

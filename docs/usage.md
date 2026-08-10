@@ -148,6 +148,25 @@ OPRF module.
 > A stolen server record still forces a **per-user offline dictionary attack**, slowed by Argon2 —
 > the record leaks no plaintext password. Honest-but-curious, two-party model.
 
+## Threshold signature (FROST) — a separate tab
+
+FROST lets **n custodians** share one signing key so that **any t of them can jointly produce a
+single ordinary Schnorr signature**, and **no custodian ever holds the whole key**. It is its own tab
+(native backend required), shipped as a single-machine simulation.
+
+1. **Deal the group key** — choose the number of participants **n** and a threshold **t**. A trusted
+   dealer splits the key with a degree-(t−1) polynomial and gives each custodian one 32-byte share.
+   The single **group public key** is the verification key.
+2. **Sign with a quorum** — type a message and tick which custodians sign. Each first commits to fresh
+   nonces, then emits a partial signature bound to the whole commitment set; the coordinator sums the
+   partials into one signature **(R, z)**.
+3. **Inspect / download** the signing transcript — the round-one commitments, each partial, and the
+   aggregated signature — and confirm it verifies under the group public key.
+
+A quorum **below the threshold** fails closed: the shares no longer interpolate the group secret, so
+the combined signature does not verify and aggregation is rejected. This is FROST on ristretto255,
+reusing the same curve as the OPRF module.
+
 ## Notes
 
 - The exported `.R` is **portable**: it decrypts Core AEAD artifacts with only `sodium` +
@@ -194,6 +213,13 @@ OPRF module.
   a stable export key. It is honest-but-curious and shipped as a single-machine two-party simulation
   (client and server run in one process); a genuine cross-machine login needs the counterparty to run
   their half. It authenticates a password — it does not by itself encrypt your file.
+- **Threshold signature (FROST)** distributes *signing authority*, not encryption: any **t of n**
+  custodians can jointly sign, no single custodian can, and the result is one ordinary Schnorr
+  signature under a single group public key. This build uses a **trusted dealer** for key generation
+  (the dealer briefly knows the whole key before discarding it) rather than a distributed key
+  generation, and runs all custodians in one process as a simulation — a real deployment would place
+  each share on a separate device and exchange the two signing rounds over the network. A sub-threshold
+  quorum fails closed. It proves *who authorized* a message; it does not by itself encrypt your file.
 - **Proxy re-encryption (PRE)** is an **optional GPL-3 companion package** (`shinyEncryptPRE`), not
   part of this MIT repo — the only mature Rust PRE crate (`umbral-pre`) is GPL-3.0, so it is kept
   separate. Install it and the app gains a **Re-encrypt (PRE)** tab: a delegator seals a file to

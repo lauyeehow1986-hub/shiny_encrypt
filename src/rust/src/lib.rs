@@ -30,6 +30,7 @@ use rand_core::{OsRng, RngCore};
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
+use curve25519_dalek::traits::Identity;
 
 use sharks::{Share, Sharks};
 
@@ -1362,6 +1363,283 @@ fn native_opaque_server_finish(
 }
 
 // ============================================================================
+// FROST (Flexible Round-Optimized Schnorr Threshold signatures) over
+// ristretto255, RFC 9591 in shape. A t-of-n group jointly produces ONE ordinary
+// Schnorr signature under a single group public key; any t participants can
+// sign, any t-1 cannot, and no single party ever holds the whole secret key.
+// Shipped as a single-machine simulation: R plays the trusted dealer and every
+// participant + the coordinator, forwarding only the fixed-length message blobs.
+//
+// Trusted-dealer keygen splits a random secret via a degree-(t-1) polynomial
+// (Shamir over the scalar field). Signing is two rounds: (1) each signer commits
+// to two fresh nonces; (2) given the full commitment set, each signer emits a
+// share z_i, and the coordinator sums them into (R, z). Binding factors over the
+// whole commitment set defeat the ROS/Drijvers attack. Self-consistent DSTs, so
+// not wire-compatible with other FROST suites — fine for local use.
+
+const FROST_DST_RHO: &[u8] = b"shinyEncrypt-FROST-ristretto255-v1-binding";
+const FROST_DST_CHAL: &[u8] = b"shinyEncrypt-FROST-ristretto255-v1-challenge";
+
+// Domain-separated hash of length-prefixed parts to a ristretto scalar.
+fn frost_hash_to_scalar(dst: &[u8], parts: &[&[u8]]) -> Scalar {
+    let mut h = Sha512::new();
+    h.update(dst);
+    for p in parts {
+        h.update((p.len() as u64).to_be_bytes());
+        h.update(p);
+    }
+    let mut wide = [0u8; 64];
+    wide.copy_from_slice(h.finalize().as_slice());
+    Scalar::from_bytes_mod_order_wide(&wide)
+}
+
+// Participant identifier (1..=n) as a nonzero ristretto scalar (the x-coord at
+// which the sharing polynomial is evaluated).
+fn frost_id_scalar(id: u16) -> Scalar {
+    Scalar::from(id as u64)
+}
+
+struct FrostCommit {
+    id: u16,
+    hiding: RistrettoPoint,  // D_i = d_i * G
+    binding: RistrettoPoint, // E_i = e_i * G
+}
+
+// Parse a commitment package: count(u16 be) || count*(id u16 be || D(32) || E(32)).
+// Validates every point, rejects zero/duplicate identifiers, and sorts by id so
+// the encoding every signer hashes is identical regardless of forwarding order.
+fn frost_parse_package(pkg: &[u8]) -> std::result::Result<Vec<FrostCommit>, String> {
+    if pkg.len() < 2 {
+        return Err("frost: package too short".into());
+    }
+    let count = u16::from_be_bytes([pkg[0], pkg[1]]) as usize;
+    let body = &pkg[2..];
+    if count == 0 {
+        return Err("frost: empty signing package".into());
+    }
+    if body.len() != count * 66 {
+        return Err("frost: malformed signing package".into());
+    }
+    let mut out: Vec<FrostCommit> = Vec::with_capacity(count);
+    for i in 0..count {
+        let off = i * 66;
+        let id = u16::from_be_bytes([body[off], body[off + 1]]);
+        if id == 0 {
+            return Err("frost: participant identifier must be >= 1".into());
+        }
+        let d = oprf_point_from(&body[off + 2..off + 34], "commitment D")?;
+        let e = oprf_point_from(&body[off + 34..off + 66], "commitment E")?;
+        out.push(FrostCommit { id, hiding: d, binding: e });
+    }
+    out.sort_by_key(|c| c.id);
+    for w in out.windows(2) {
+        if w[0].id == w[1].id {
+            return Err("frost: duplicate participant identifier".into());
+        }
+    }
+    Ok(out)
+}
+
+// Canonical byte encoding of the (sorted) commitment set for the binding hash.
+fn frost_encode_commitments(list: &[FrostCommit]) -> Vec<u8> {
+    let mut enc = Vec::with_capacity(list.len() * 66);
+    for c in list {
+        enc.extend_from_slice(&c.id.to_be_bytes());
+        enc.extend_from_slice(&c.hiding.compress().to_bytes());
+        enc.extend_from_slice(&c.binding.compress().to_bytes());
+    }
+    enc
+}
+
+// Derive the per-signer binding factors rho_l, the group commitment
+// R = sum(D_l + rho_l*E_l), and the Schnorr challenge c = H(R, Y, msg). Every
+// signer and the coordinator run this identically, so they agree on (R, c).
+fn frost_session(
+    list: &[FrostCommit],
+    group_pk_bytes: &[u8],
+    msg: &[u8],
+) -> (Vec<(u16, Scalar)>, RistrettoPoint, Scalar) {
+    let enc = frost_encode_commitments(list);
+    let mut rhos: Vec<(u16, Scalar)> = Vec::with_capacity(list.len());
+    let mut group_commit = RistrettoPoint::identity();
+    for c in list {
+        let rho = frost_hash_to_scalar(
+            FROST_DST_RHO,
+            &[&c.id.to_be_bytes(), group_pk_bytes, msg, &enc],
+        );
+        group_commit += c.hiding + c.binding * rho;
+        rhos.push((c.id, rho));
+    }
+    let r_bytes = group_commit.compress().to_bytes();
+    let chal = frost_hash_to_scalar(FROST_DST_CHAL, &[&r_bytes, group_pk_bytes, msg]);
+    (rhos, group_commit, chal)
+}
+
+// Lagrange coefficient for identifier `i` over the signing set `ids`, evaluated
+// at 0: lambda_i = prod_{j!=i} x_j/(x_j - x_i). Denominators are nonzero because
+// identifiers are distinct. Sum(lambda_l * share_l) reconstructs the group secret.
+fn frost_lagrange(ids: &[u16], i: u16) -> Scalar {
+    let xi = frost_id_scalar(i);
+    let mut num = Scalar::ONE;
+    let mut den = Scalar::ONE;
+    for &j in ids {
+        if j == i {
+            continue;
+        }
+        let xj = frost_id_scalar(j);
+        num *= xj;
+        den *= xj - xi;
+    }
+    num * den.invert()
+}
+
+/// Trusted-dealer FROST keygen for a t-of-n group. Returns
+/// group_public_key(32) || n * ( identifier(u16 be, 2) || signing_share(32) ).
+/// Any t of the signing shares jointly produce one Schnorr signature under the
+/// group public key; fewer than t cannot.
+#[extendr]
+fn native_frost_keygen(t: i32, n: i32) -> std::result::Result<Vec<u8>, String> {
+    if t < 1 || n < 1 || t > n {
+        return Err("frost: require 1 <= t <= n".into());
+    }
+    if n > 255 {
+        return Err("frost: n must be <= 255".into());
+    }
+    let t = t as usize;
+    let n = n as u16;
+    // Random degree-(t-1) polynomial; coeffs[0] is the group secret s, Y = s*G.
+    let coeffs: Vec<Scalar> = (0..t).map(|_| oprf_rand_scalar()).collect();
+    let group_pk = RISTRETTO_BASEPOINT_POINT * coeffs[0];
+    let mut out = Vec::with_capacity(32 + (n as usize) * 34);
+    out.extend_from_slice(&group_pk.compress().to_bytes());
+    for i in 1..=n {
+        // share = f(i) via Horner's rule over the scalar field.
+        let x = frost_id_scalar(i);
+        let mut share = Scalar::ZERO;
+        for c in coeffs.iter().rev() {
+            share = share * x + c;
+        }
+        out.extend_from_slice(&i.to_be_bytes());
+        out.extend_from_slice(&share.to_bytes());
+    }
+    Ok(out)
+}
+
+/// Round 1: a participant samples two secret nonces and publishes their
+/// commitments. Returns nonce_secret(64 = hiding||binding) || commitment(64 =
+/// D||E). Keep the first 64 bytes secret; only the commitment is published.
+#[extendr]
+fn native_frost_commit() -> Vec<u8> {
+    let d = oprf_rand_scalar();
+    let e = oprf_rand_scalar();
+    let big_d = RISTRETTO_BASEPOINT_POINT * d;
+    let big_e = RISTRETTO_BASEPOINT_POINT * e;
+    let mut out = Vec::with_capacity(128);
+    out.extend_from_slice(&d.to_bytes());
+    out.extend_from_slice(&e.to_bytes());
+    out.extend_from_slice(&big_d.compress().to_bytes());
+    out.extend_from_slice(&big_e.compress().to_bytes());
+    out
+}
+
+/// Round 2: participant `identifier` produces its signature share z_i. Binds to
+/// the full commitment `package` (so every signer derives the same binding
+/// factors, group commitment, and challenge) and to `msg`. Fails closed if this
+/// signer's own commitment is absent from the package or does not match its
+/// nonce. Returns z_i(32).
+#[extendr]
+fn native_frost_sign(
+    signing_share: &[u8],
+    identifier: i32,
+    nonce_secret: &[u8],
+    msg: &[u8],
+    package: &[u8],
+    group_pk: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if identifier < 1 || identifier > 65535 {
+        return Err("frost: identifier out of range".into());
+    }
+    let id = identifier as u16;
+    if nonce_secret.len() != 64 {
+        return Err("frost: nonce secret must be 64 bytes".into());
+    }
+    let s = oprf_scalar_from(signing_share, "signing share")?;
+    let d = oprf_scalar_from(&nonce_secret[0..32], "hiding nonce")?;
+    let e = oprf_scalar_from(&nonce_secret[32..64], "binding nonce")?;
+    // Validate the group public key encoding even though the share math below
+    // does not use the point directly (it is folded into the hashed transcript).
+    oprf_point_from(group_pk, "group public key")?;
+
+    let list = frost_parse_package(package)?;
+    let ids: Vec<u16> = list.iter().map(|c| c.id).collect();
+    let my = list
+        .iter()
+        .find(|c| c.id == id)
+        .ok_or("frost: this signer is not in the signing package")?;
+    // The published commitment must match this signer's secret nonces.
+    if my.hiding != RISTRETTO_BASEPOINT_POINT * d || my.binding != RISTRETTO_BASEPOINT_POINT * e {
+        return Err("frost: nonce does not match the committed value".into());
+    }
+
+    let (rhos, _r, chal) = frost_session(&list, group_pk, msg);
+    let rho = rhos.iter().find(|(rid, _)| *rid == id).unwrap().1;
+    let lambda = frost_lagrange(&ids, id);
+    // z_i = d_i + e_i*rho_i + lambda_i*s_i*c
+    let z = d + e * rho + lambda * s * chal;
+    Ok(z.to_bytes().to_vec())
+}
+
+/// Aggregate the per-signer shares into one Schnorr signature (R, z) and verify
+/// it under the group public key. `shares` is k*32 bytes (each z_i); `package`
+/// must be the same one the signers used. Returns signature(64 = R||z). Fails
+/// closed if the recombined signature does not verify (a bad or missing share).
+#[extendr]
+fn native_frost_aggregate(
+    package: &[u8],
+    msg: &[u8],
+    group_pk: &[u8],
+    shares: &[u8],
+) -> std::result::Result<Vec<u8>, String> {
+    if shares.is_empty() || shares.len() % 32 != 0 {
+        return Err("frost: shares must be a non-empty multiple of 32 bytes".into());
+    }
+    let gpk_pt = oprf_point_from(group_pk, "group public key")?;
+    let list = frost_parse_package(package)?;
+    let (_rhos, group_commit, chal) = frost_session(&list, group_pk, msg);
+
+    let mut z = Scalar::ZERO;
+    for chunk in shares.chunks(32) {
+        z += oprf_scalar_from(chunk, "signature share")?;
+    }
+    // Schnorr identity: z*G == R + c*Y.
+    if RISTRETTO_BASEPOINT_POINT * z != group_commit + gpk_pt * chal {
+        return Err("frost: aggregated signature is invalid (a bad or missing share)".into());
+    }
+    let mut out = Vec::with_capacity(64);
+    out.extend_from_slice(&group_commit.compress().to_bytes());
+    out.extend_from_slice(&z.to_bytes());
+    Ok(out)
+}
+
+/// Verify a FROST/Schnorr signature (R||z, 64 bytes) under the group public key
+/// and message. Returns 1 (valid) / 0 (invalid); errors only on malformed input.
+#[extendr]
+fn native_frost_verify(
+    group_pk: &[u8],
+    msg: &[u8],
+    signature: &[u8],
+) -> std::result::Result<i32, String> {
+    if signature.len() != 64 {
+        return Err("frost: signature must be 64 bytes".into());
+    }
+    let gpk_pt = oprf_point_from(group_pk, "group public key")?;
+    let r_pt = oprf_point_from(&signature[0..32], "signature R")?;
+    let z = oprf_scalar_from(&signature[32..64], "signature z")?;
+    let chal = frost_hash_to_scalar(FROST_DST_CHAL, &[&signature[0..32], group_pk, msg]);
+    Ok((RISTRETTO_BASEPOINT_POINT * z == r_pt + gpk_pt * chal) as i32)
+}
+
+// ============================================================================
 
 /// Report the crate version so R can confirm which native build is loaded.
 #[extendr]
@@ -1408,5 +1686,10 @@ extendr_module! {
     fn native_opaque_server_respond;
     fn native_opaque_client_finish;
     fn native_opaque_server_finish;
+    fn native_frost_keygen;
+    fn native_frost_commit;
+    fn native_frost_sign;
+    fn native_frost_aggregate;
+    fn native_frost_verify;
     fn native_backend_version;
 }

@@ -390,6 +390,8 @@ test_that("catalogue lists all tiers; Core AEAD always available, PQC gated on t
                crypto_backend_available("psi"))
   expect_equal("opaque" %in% s$id[s$available],
                crypto_backend_available("opaque"))
+  expect_equal("frost" %in% s$id[s$available],
+               crypto_backend_available("frost"))
 })
 
 test_that("native OPRF (if built): deterministic in (input, key), verifiable, fails closed", {
@@ -551,4 +553,55 @@ test_that("native OPAQUE (if built): registers, logs in with mutual auth, fails 
   expect_error(native_opaque_server_finish(sr[321:448], as.raw(rep(0L, 64L))))     # forged KE3
   expect_error(native_opaque_register_finalize(pwb, as.raw(1:10),
                reg$record[33:64], kp[33:64]))                                       # short blind bundle
+})
+
+test_that("native FROST (if built): t-of-n threshold signing, verifies, fails closed below threshold", {
+  skip_if_not(crypto_backend_available("frost"), "native FROST backend not built")
+  msg <- "Approve release of dataset #42"
+
+  keys <- frost_keygen(t = 3, n = 5)
+  expect_length(keys$group_pk, 32L)
+  expect_length(keys$shares, 5L)
+  expect_equal(vapply(keys$shares, function(s) s$id, integer(1)), 1:5)
+  expect_true(all(vapply(keys$shares, function(s) length(s$share) == 32L, logical(1))))
+
+  # an exact-threshold quorum produces one valid Schnorr signature
+  sig <- frost_sign(msg, keys, c(1L, 2L, 3L))
+  expect_true(sig$success)
+  expect_true(sig$verified)
+  expect_length(sig$signature, 64L)                        # R(32) || z(32)
+  expect_true(native_frost_verify(keys$group_pk, charToRaw(enc2utf8(msg)), sig$signature))
+
+  # a DIFFERENT quorum of the same group signs the same message to a signature
+  # that also verifies (the group key is what verifies, not the quorum)
+  sig2 <- frost_sign(msg, keys, c(2L, 4L, 5L))
+  expect_true(sig2$success && sig2$verified)
+  # fresh nonces each run -> the aggregate signature differs
+  expect_false(identical(as.raw(sig$signature), as.raw(sig2$signature)))
+  # an over-threshold quorum (all 5) also works
+  expect_true(frost_sign(msg, keys, 1:5)$verified)
+
+  # a sub-threshold quorum fails CLOSED: the shares no longer interpolate the
+  # group secret, so aggregation rejects and no signature is produced
+  short <- frost_sign(msg, keys, c(1L, 2L))
+  expect_false(short$success)
+  expect_null(short$signature)
+
+  # the signature does not verify against a different message (tamper detection)
+  expect_false(native_frost_verify(keys$group_pk, charToRaw("Approve release of dataset #99"),
+                                   sig$signature))
+  # nor under a different group's public key
+  other <- frost_keygen(3, 5)
+  expect_false(native_frost_verify(other$group_pk, charToRaw(enc2utf8(msg)), sig$signature))
+
+  # flipping one byte of the signature breaks verification
+  tampered <- sig$signature
+  tampered[40] <- as.raw(bitwXor(as.integer(tampered[40]), 1L))
+  expect_false(native_frost_verify(keys$group_pk, charToRaw(enc2utf8(msg)), tampered))
+
+  # native primitives fail closed on malformed buffers
+  expect_error(native_frost_keygen(4L, 3L))                              # t > n
+  expect_error(native_frost_verify(keys$group_pk, charToRaw(msg), as.raw(1:10)))  # short sig
+  expect_error(native_frost_aggregate(sig$package, charToRaw(enc2utf8(msg)),
+                                      keys$group_pk, as.raw(1:10)))       # bad share length
 })
