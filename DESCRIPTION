@@ -23,8 +23,11 @@ Imports:
     jsonlite,
     readr,
     readxl,
-    openxlsx
+    zip,
+    stats,
+    utils
 Suggests:
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    shinyEncryptPRE
 Config/testthat/edition: 3
 RoxygenNote: 7.3.2

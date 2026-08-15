@@ -1,4 +1,4 @@
-# FROST threshold-signature tab — a t-of-n group jointly signs one message with
+# FROST threshold-signature tab \u2014 a t-of-n group jointly signs one message with
 # a single Schnorr signature, no custodian ever holding the whole key. Shipped as
 # a single-machine simulation with an exportable transcript (see R/frost.R). Any
 # t of the n custodians can sign; a smaller quorum fails closed. Needs the native
@@ -47,7 +47,7 @@ frost_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$frost_keygen, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("frost")))
-        stop("Native FROST backend not built — run tools/build_native.R and restart.")
+        stop("Native FROST backend not built \u2014 run tools/build_native.R and restart.")
       rv$frost_keys <- frost_keygen(input$frost_n, input$frost_t)
       rv$frost_sign_res <- NULL         # a fresh group invalidates old signatures
       rv$frost_msg <- NULL
@@ -62,7 +62,7 @@ frost_server <- function(input, output, session, rv) {
     }, error = function(e) { rv$frost_sign_res <- NULL; rv$frost_msg <- conditionMessage(e) })
   })
 
-  # Quorum picker — always reflects the current group; pre-selects exactly t.
+  # Quorum picker \u2014 always reflects the current group; pre-selects exactly t.
   output$frost_signer_picker <- shiny::renderUI({
     k <- rv$frost_keys
     if (is.null(k)) return(shiny::helpText(class = "small text-muted",
@@ -70,7 +70,7 @@ frost_server <- function(input, output, session, rv) {
     ids <- vapply(k$shares, function(s) s$id, integer(1))
     shiny::tagList(
       shiny::checkboxGroupInput("frost_signers",
-        sprintf("Signing quorum (need ≥ %d of %d)", k$t, k$n),
+        sprintf("Signing quorum (need \u2265 %d of %d)", k$t, k$n),
         choices = stats::setNames(ids, paste("Custodian", ids)),
         selected = utils::head(ids, k$t), inline = TRUE),
       shiny::helpText(class = "small text-muted",
@@ -88,8 +88,8 @@ frost_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-info small py-2",
         shiny::HTML(paste0(
           "A trusted dealer splits one Schnorr key into <b>n</b> shares via a ",
-          "degree-(t−1) polynomial. Signing takes two rounds: each chosen signer ",
-          "first commits to fresh nonces, then — given the whole commitment set — ",
+          "degree-(t\u22121) polynomial. Signing takes two rounds: each chosen signer ",
+          "first commits to fresh nonces, then \u2014 given the whole commitment set \u2014 ",
           "emits a partial signature. The coordinator sums the partials into a ",
           "single <b>(R, z)</b> that verifies like any Schnorr signature under the ",
           "one group public key. Simulated on one machine.")))
@@ -129,7 +129,7 @@ frost_server <- function(input, output, session, rv) {
           quorum, length(o$shares),
           if (isTRUE(o$verified)) "<b>verifies</b>"
           else "<span class='text-danger'>does NOT verify</span>"))),
-      shiny::div(class = "small text-muted", "Aggregated signature  R (32) ‖ z (32):"),
+      shiny::div(class = "small text-muted", "Aggregated signature  R (32) \u2016 z (32):"),
       shiny::tags$pre(class = "small", .frost_hex(o$signature))
     )
   })
@@ -143,13 +143,13 @@ frost_server <- function(input, output, session, rv) {
               paste(o$signer_ids, collapse = ", "), o$threshold, o$n),
       sprintf("package   : %d commitments, %d bytes", length(o$commitments), length(o$package)),
       vapply(seq_along(o$shares), function(i)
-        sprintf("share z_%-2s : %s…", o$signer_ids[i],
+        sprintf("share z_%-2s : %s\u2026", o$signer_ids[i],
                 substr(.frost_hex(utils::head(o$shares[[i]], 16L)), 1L, 32L)),
         character(1)))
     shiny::tagList(
       shiny::tags$hr(),
       shiny::div(class = "small text-muted",
-        "Signing transcript — round-1 commitments and each signer's partial:"),
+        "Signing transcript \u2014 round-1 commitments and each signer's partial:"),
       shiny::tags$pre(class = "small", paste(lines, collapse = "\n"))
     )
   })
@@ -169,7 +169,7 @@ frost_server <- function(input, output, session, rv) {
       shareblock <- vapply(seq_along(o$shares), function(i)
         sprintf("  z_%s = %s", o$signer_ids[i], .frost_hex(o$shares[[i]])), character(1))
       writeLines(c(
-        "# shinyEncrypt FROST — t-of-n threshold Schnorr signing transcript",
+        "# shinyEncrypt FROST \u2014 t-of-n threshold Schnorr signing transcript",
         sprintf("# group      : %d custodians, threshold %d", o$n, o$threshold),
         sprintf("# group pubkey: %s", if (is.null(k)) "" else .frost_hex(k$group_pk)),
         sprintf("# message    : %s", o$message),

@@ -38,7 +38,7 @@ kdf_derive <- function(secret, salt = NULL, algo = "scrypt", size = 32L,
                             rounds = rounds, size = size)
     },
     "blake3" = {
-      # fast (NOT memory-hard) — hash secret||salt. Kept for interop/demo.
+      # fast (NOT memory-hard) \u2014 hash secret||salt. Kept for interop/demo.
       coerce_key(hash_bytes(c(secret, salt), "blake3"), size)
     },
     "sha256" = {

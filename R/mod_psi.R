@@ -1,4 +1,4 @@
-# Private Set Intersection (PSI) tab — find the overlap between two parties'
+# Private Set Intersection (PSI) tab \u2014 find the overlap between two parties'
 # identifier lists without either side revealing its full list. Shipped as a
 # single-machine two-party simulation with an exportable wire transcript (see
 # R/psi.R for the ECDH-PSI protocol). Needs the native backend.
@@ -8,7 +8,7 @@ ui_psi <- function() {
     sidebar = bslib::sidebar(
       width = 380, title = "Private set intersection",
       shiny::helpText(
-        "Find which identifiers two datasets share — without either side ",
+        "Find which identifiers two datasets share \u2014 without either side ",
         "revealing its non-shared rows. Upload both sets, pick the ID column in ",
         "each, and only the overlap is revealed."),
       shiny::tags$b(class = "small", "Party A (your set)"),
@@ -62,11 +62,11 @@ psi_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$psi_run, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("psi")))
-        stop("Native PSI backend not built — run tools/build_native.R and restart.")
+        stop("Native PSI backend not built \u2014 run tools/build_native.R and restart.")
       dfa <- psi_a_data(); dfb <- psi_b_data()
       ca <- input$psi_a_colname; cb <- input$psi_b_colname
       shiny::req(ca, cb)
-      res <- shiny::withProgress(message = "Running private intersection…", value = 0.5,
+      res <- shiny::withProgress(message = "Running private intersection\u2026", value = 0.5,
                                  psi_two_party(dfa[[ca]], dfb[[cb]]))
       rv$psi_out <- c(res, list(a_df = dfa, a_col = ca,
                                 name_a = input$psi_a_file$name,
@@ -85,7 +85,7 @@ psi_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-info small py-2",
         shiny::HTML(paste0(
           "Each identifier is hashed to a curve point and masked with a per-party secret. ",
-          "Only the <b>masked points</b> (uniform-random without the other party's secret) cross the wire — ",
+          "Only the <b>masked points</b> (uniform-random without the other party's secret) cross the wire \u2014 ",
           "the raw lists never do. The party running the match learns the overlap and the other set's <i>size</i>, ",
           "nothing more. Honest-but-curious two-party model, simulated on one machine.")))
     )
@@ -100,7 +100,7 @@ psi_server <- function(input, output, session, rv) {
       hdr, strrep("-", nchar(hdr)),
       sprintf("Set A            : %s unique IDs", format(o$n_a, big.mark = ",")),
       sprintf("Set B            : %s unique IDs", format(o$n_b, big.mark = ",")),
-      sprintf("Shared (A ∩ B)   : %s IDs", format(o$n_inter, big.mark = ",")),
+      sprintf("Shared (A \u2229 B)   : %s IDs", format(o$n_inter, big.mark = ",")),
       sprintf("Jaccard overlap  : %.4f", o$jaccard),
       "",
       "Only the shared IDs are revealed. B's non-shared rows stay private."
@@ -120,7 +120,7 @@ psi_server <- function(input, output, session, rv) {
     shiny::tagList(
       shiny::tags$hr(),
       shiny::div(class = "small text-muted",
-        sprintf("Wire transcript — the %d masked points party A sends look like random 32-byte values:",
+        sprintf("Wire transcript \u2014 the %d masked points party A sends look like random 32-byte values:",
                 length(o$transcript$a_masked))),
       shiny::tags$pre(class = "small", paste(preview, collapse = "\n"))
     )
@@ -160,7 +160,7 @@ psi_server <- function(input, output, session, rv) {
     content  = function(file) {
       o <- rv$psi_out
       writeLines(c(
-        "# shinyEncrypt PSI — wire transcript (what would cross between parties)",
+        "# shinyEncrypt PSI \u2014 wire transcript (what would cross between parties)",
         "# Each line is a masked ristretto255 point (hex). Uniform-random without",
         "# the receiving party's secret scalar; reveals nothing about the raw IDs.",
         sprintf("# A sent %d masked points, B sent %d masked points.",

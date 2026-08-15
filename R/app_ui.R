@@ -10,7 +10,7 @@ app_theme <- function() {
 .disclaimer <- function() {
   shiny::div(
     class = "small text-muted border-top pt-2 mt-3",
-    shiny::HTML("&#9888; Research/utility tool — <b>not for diagnosis or clinical decision-making</b>. ",
+    shiny::HTML("&#9888; Research/utility tool \u2014 <b>not for diagnosis or clinical decision-making</b>. ",
                 "You are responsible for key custody. Never upload real patient data you are not authorised to process.")
   )
 }
@@ -18,7 +18,7 @@ app_theme <- function() {
 ui_encrypt <- function() {
   bslib::layout_sidebar(
     sidebar = bslib::sidebar(
-      width = 360, title = "1–5. Encrypt pipeline",
+      width = 360, title = "1\u20135. Encrypt pipeline",
       shiny::fileInput("infile", "Import CSV / XLSX / RDS / binary (up to 1 GB)",
                        accept = c(".csv", ".tsv", ".xlsx", ".xls", ".rds", ".bin")),
       shiny::selectInput("kind", "Interpret as",
@@ -29,7 +29,7 @@ ui_encrypt <- function() {
       shiny::selectInput("keysrc", "Key source",
                          c("Random key (download it!)" = "random",
                            "Passphrase (KDF)" = "passphrase",
-                           "Free text → hash" = "freetext_hash",
+                           "Free text \u2192 hash" = "freetext_hash",
                            "Key file" = "keyfile")),
       shiny::conditionalPanel(
         "input.keysrc == 'passphrase'",
@@ -56,7 +56,7 @@ ui_encrypt <- function() {
         shiny::actionButton("gen_pqc", "Generate a new PQC keypair",
                             class = "btn-outline-primary btn-sm mb-2 w-100"),
         shiny::uiOutput("pqc_key_status"),
-        shiny::fileInput("pqc_pub_up", "…or upload a recipient public key (.pub)")),
+        shiny::fileInput("pqc_pub_up", "\u2026or upload a recipient public key (.pub)")),
       shiny::conditionalPanel(
         "input.keysrc == 'shamir'",
         shiny::helpText(class = "small text-muted",
@@ -70,7 +70,7 @@ ui_encrypt <- function() {
         shiny::helpText(class = "small text-muted",
           "Seals a fresh random key behind a sequential-squaring puzzle: the ",
           "artifact opens only after roughly the chosen delay of non-stop ",
-          "computation. No key file is produced — time is the key."),
+          "computation. No key file is produced \u2014 time is the key."),
         shiny::div(class = "d-flex gap-2",
           shiny::numericInput("tl_amount", "Delay", value = 10, min = 1, step = 1),
           shiny::selectInput("tl_unit", "Unit",
@@ -86,12 +86,12 @@ ui_encrypt <- function() {
         "input.keysrc == 'cpabe'",
         shiny::helpText(class = "small text-muted",
           "Seals a fresh random key under a boolean ATTRIBUTE POLICY. Only holders ",
-          "of an attribute key that satisfies the policy can decrypt — role-based ",
+          "of an attribute key that satisfies the policy can decrypt \u2014 role-based ",
           "access without a per-recipient key exchange."),
         shiny::actionButton("gen_cpabe", "Generate a new CP-ABE authority",
                             class = "btn-outline-primary btn-sm mb-2 w-100"),
         shiny::uiOutput("cpabe_key_status"),
-        shiny::fileInput("cpabe_pk_up", "…or upload an authority public key (.pub)"),
+        shiny::fileInput("cpabe_pk_up", "\u2026or upload an authority public key (.pub)"),
         shiny::textInput("cpabe_policy", "Access policy",
           placeholder = "\"cardiology\" and (\"senior\" or \"admin\")"),
         shiny::helpText(class = "small text-muted",
@@ -103,7 +103,7 @@ ui_encrypt <- function() {
         shiny::textInput("cpabe_issue_attrs", "Recipient attributes (comma-separated)",
           placeholder = "cardiology, senior"),
         shiny::fileInput("cpabe_master_up",
-          "Master key (.master) — needed unless you just generated an authority"),
+          "Master key (.master) \u2014 needed unless you just generated an authority"),
         shiny::actionButton("cpabe_issue", "Issue attribute key",
                             class = "btn-outline-secondary btn-sm w-100"),
         shiny::uiOutput("cpabe_issue_status")),
@@ -111,12 +111,12 @@ ui_encrypt <- function() {
         "input.keysrc == 'ibe'",
         shiny::helpText(class = "small text-muted",
           "Seals a fresh key straight to a recipient IDENTITY string (an email, a ",
-          "role, a study id) — no certificate, no prior key exchange. The authority ",
+          "role, a study id) \u2014 no certificate, no prior key exchange. The authority ",
           "issues that identity its own key; only it can decrypt."),
         shiny::actionButton("gen_ibe", "Generate a new IBE authority",
                             class = "btn-outline-primary btn-sm mb-2 w-100"),
         shiny::uiOutput("ibe_key_status"),
-        shiny::fileInput("ibe_pk_up", "…or upload an authority public key (.pub)"),
+        shiny::fileInput("ibe_pk_up", "\u2026or upload an authority public key (.pub)"),
         shiny::textInput("ibe_identity", "Recipient identity",
           placeholder = "alice@hospital.org"),
         shiny::helpText(class = "small text-muted",
@@ -127,7 +127,7 @@ ui_encrypt <- function() {
         shiny::textInput("ibe_issue_id", "Identity to issue a key for",
           placeholder = "alice@hospital.org"),
         shiny::fileInput("ibe_master_up",
-          "Master key (.master) — needed unless you just generated an authority"),
+          "Master key (.master) \u2014 needed unless you just generated an authority"),
         shiny::actionButton("ibe_issue", "Issue identity key",
                             class = "btn-outline-secondary btn-sm w-100"),
         shiny::uiOutput("ibe_issue_status")),
@@ -142,10 +142,10 @@ ui_encrypt <- function() {
         shiny::actionButton("gen_oprf", "Generate a new OPRF key",
                             class = "btn-outline-primary btn-sm mb-2 w-100"),
         shiny::uiOutput("oprf_key_status"),
-        shiny::fileInput("oprf_key_up", "…or upload an existing OPRF key (.oprfkey)")),
+        shiny::fileInput("oprf_key_up", "\u2026or upload an existing OPRF key (.oprfkey)")),
       shiny::hr(),
       shiny::selectInput("scheme", "Encryption scheme", choices = NULL),
-      shiny::textInput("nonce", "Nonce/IV (optional — blank = secure random)", ""),
+      shiny::textInput("nonce", "Nonce/IV (optional \u2014 blank = secure random)", ""),
       shiny::helpText(class = "small text-muted",
                       "Leave blank for a random nonce (recommended). Any text is accepted; exact-length hex is used verbatim."),
       shiny::uiOutput("sign_ui"),
@@ -176,7 +176,7 @@ ui_decrypt <- function() {
       shiny::uiOutput("dec_source_hint"),
       shiny::uiOutput("dec_signpub_ui"),
       shiny::passwordInput("dec_secret", "Passphrase / free text (if used)"),
-      shiny::fileInput("dec_keyfile", "…or key file (for random-key / key-file sources)"),
+      shiny::fileInput("dec_keyfile", "\u2026or key file (for random-key / key-file sources)"),
       shiny::uiOutput("dec_shares_ui"),
       shiny::uiOutput("dec_timelock_ui"),
       shiny::uiOutput("dec_cpabe_ui"),
@@ -202,8 +202,8 @@ ui_fpe <- function() {
     sidebar = bslib::sidebar(
       width = 360, title = "Format-preserving de-identification",
       shiny::radioButtons("fpe_mode", NULL,
-        c("Apply — de-identify columns" = "apply",
-          "Reverse — restore originals" = "reverse")),
+        c("Apply \u2014 de-identify columns" = "apply",
+          "Reverse \u2014 restore originals" = "reverse")),
       shiny::conditionalPanel(
         "input.fpe_mode == 'apply'",
         shiny::fileInput("fpe_infile", "CSV / XLSX to de-identify",
@@ -211,11 +211,11 @@ ui_fpe <- function() {
         shiny::uiOutput("fpe_col_ui"),
         shiny::selectInput("fpe_alpha", "Alphabet",
           c("Auto-detect per column (recommended)" = "auto",
-            "Force digits (0–9)" = "digits",
-            "Force A–Z 0–9" = "alnum_upper",
-            "Force a–z A–Z 0–9" = "alnum")),
+            "Force digits (0\u20139)" = "digits",
+            "Force A\u2013Z 0\u20139" = "alnum_upper",
+            "Force a\u2013z A\u2013Z 0\u20139" = "alnum")),
         shiny::fileInput("fpe_kit_reuse",
-          "Reuse an existing .fpekit (optional — for matching tokens across files)"),
+          "Reuse an existing .fpekit (optional \u2014 for matching tokens across files)"),
         shiny::actionButton("fpe_apply", "De-identify", class = "btn-primary w-100")),
       shiny::conditionalPanel(
         "input.fpe_mode == 'reverse'",
@@ -276,7 +276,7 @@ app_ui <- function() {
     bslib::nav_panel("How to use", ui_help()),
     bslib::nav_spacer(),
     bslib::nav_item(shiny::tags$span(class = "navbar-text small",
-                                     "v0.1 · not for clinical use"))
+                                     "v0.1 \u00B7 not for clinical use"))
   ))
   do.call(bslib::page_navbar,
           c(list(title = "shinyEncrypt", theme = app_theme(), id = "nav"), panels))

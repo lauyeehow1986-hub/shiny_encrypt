@@ -84,9 +84,9 @@ fhe_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$fhe_run, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("tfhe")))
-        stop("Native TFHE backend not built — run tools/build_native.R and restart.")
+        stop("Native TFHE backend not built \u2014 run tools/build_native.R and restart.")
       vals <- fhe_values_of()
-      shiny::withProgress(message = "Homomorphic compute (keygen, encrypt, add)…",
+      shiny::withProgress(message = "Homomorphic compute (keygen, encrypt, add)\u2026",
                           value = 0.3, {
         rv$fhe_res <- fhe_sum_demo(vals)
       })
@@ -104,7 +104,7 @@ fhe_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-info small py-2",
         shiny::HTML(paste0(
           "Each number is encrypted under a secret <b>client key</b>. The ",
-          "<b>server key</b> can add ciphertexts but <b>cannot decrypt</b> — ",
+          "<b>server key</b> can add ciphertexts but <b>cannot decrypt</b> \u2014 ",
           "the sum is computed blind and only its single ciphertext is sent ",
           "back for the client to open.")))
     )
@@ -126,7 +126,7 @@ fhe_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-secondary py-2 small",
         shiny::HTML(sprintf(paste0(
           "The homomorphic sum received a <b>%s server key</b> and the ",
-          "ciphertexts — never the client key. There is no server-side decrypt ",
+          "ciphertexts \u2014 never the client key. There is no server-side decrypt ",
           "operation; only the holder of the client key can read any result."),
           .fhe_human_bytes(o$server_key_bytes)))))
   })
@@ -137,7 +137,7 @@ fhe_server <- function(input, output, session, rv) {
     lines <- c(
       sprintf("values encrypted : %d (e.g. %s%s)", o$n,
               paste(o$values_sample, collapse = ", "),
-              if (o$n > length(o$values_sample)) ", …" else ""),
+              if (o$n > length(o$values_sample)) ", \u2026" else ""),
       sprintf("client key       : %s (can decrypt)", .fhe_human_bytes(o$client_key_bytes)),
       sprintf("server key       : %s (compute only, cannot decrypt)",
               .fhe_human_bytes(o$server_key_bytes)),
@@ -146,7 +146,7 @@ fhe_server <- function(input, output, session, rv) {
       sprintf("plaintext sum    : %s", .fhe_fmt(o$plaintext_sum)),
       sprintf("decrypted sum    : %s  (%s)", .fhe_fmt(o$fhe_result),
               if (isTRUE(o$correct)) "correct" else "MISMATCH"),
-      sprintf("sample ciphertext: %s…", o$sample_ct_hex),
+      sprintf("sample ciphertext: %s\u2026", o$sample_ct_hex),
       o$guard)
     shiny::tagList(
       shiny::tags$hr(),

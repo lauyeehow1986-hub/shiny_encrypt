@@ -2,7 +2,7 @@
 #
 # A signature lets whoever holds the signing SECRET key vouch for a ciphertext
 # and its metadata. Verification needs only the PUBLIC key, which travels inside
-# the envelope, so any recipient can check it — but that only proves the envelope
+# the envelope, so any recipient can check it \u2014 but that only proves the envelope
 # was not altered after this particular key signed it. Trust still requires the
 # recipient to confirm the signer's public-key fingerprint out-of-band (the
 # Decrypt tab shows it for exactly that comparison).

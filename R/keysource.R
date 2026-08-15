@@ -65,14 +65,14 @@ resolve_key <- function(spec) {
       list(key = key, salt = NULL,
            source_meta = list(type = "shamir", t = t, n = n,
                               share_len = length(shares[[1]])),
-           key_export = NULL,          # the key itself is never stored — only shares
+           key_export = NULL,          # the key itself is never stored \u2014 only shares
            shares = shares)            # downloaded as t-of-n custodian files
     },
     "timelock" = {
       key  <- as.raw(spec$key %||% sodium::random(32L))
       bits <- as.integer(spec$bits %||% 2048L)
       t    <- as.numeric(spec$t_squarings %||%
-                stop("Time-lock: internal error — missing squaring count."))
+                stop("Time-lock: internal error \u2014 missing squaring count."))
       puz  <- native_timelock_generate(bits, t)   # list(N, b); b is the solution
       masked <- .tl_xor(key, timelock_mask(puz$b))
       list(key = key, salt = NULL,
@@ -82,7 +82,7 @@ resolve_key <- function(spec) {
                               masked_key = raw_to_base64(masked),
                               rate_est = spec$rate_est %||% NA,
                               target_seconds = spec$target_seconds %||% NA),
-           key_export = NULL,          # no key file — solving the puzzle IS the key
+           key_export = NULL,          # no key file \u2014 solving the puzzle IS the key
            # trapdoor destroyed here; keep b only if the creator wants an instant unlock
            timelock_master = if (isTRUE(spec$keep_master)) puz$b else NULL)
     },

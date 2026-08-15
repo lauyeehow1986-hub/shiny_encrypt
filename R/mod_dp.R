@@ -1,4 +1,4 @@
-# Private stats (DP) tab — release differentially private aggregates over an
+# Private stats (DP) tab \u2014 release differentially private aggregates over an
 # uploaded table (see R/dp.R for the mechanisms). Pure R, always available.
 # A running (epsilon, delta) budget tracks the total privacy spend across queries.
 
@@ -137,7 +137,7 @@ dp_server <- function(input, output, session, rv) {
         shiny::div(class = paste("progress-bar", bar_cls), role = "progressbar",
                    style = sprintf("width:%.1f%%;", pct))),
       if (over) shiny::div(class = "text-danger small mt-1",
-        "Budget exceeded — further releases keep leaking privacy. Reset or stop.")
+        "Budget exceeded \u2014 further releases keep leaking privacy. Reset or stop.")
     )
   })
 

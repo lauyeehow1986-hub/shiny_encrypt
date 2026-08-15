@@ -1,4 +1,4 @@
-# Time-lock encryption (RSW sequential-squaring puzzle) — R-side orchestration.
+# Time-lock encryption (RSW sequential-squaring puzzle) \u2014 R-side orchestration.
 #
 # The native backend (R/backend.R) supplies three primitives:
 #   native_timelock_generate(bits, t)        -> list(N, b)   [trapdoor fast-path]

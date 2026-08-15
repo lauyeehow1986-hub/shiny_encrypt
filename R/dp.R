@@ -1,4 +1,4 @@
-# Differential privacy — mechanisms for releasing noisy aggregate statistics.
+# Differential privacy \u2014 mechanisms for releasing noisy aggregate statistics.
 #
 # This is a *privacy layer*, not encryption: it lets you publish counts / sums /
 # means over a table while provably bounding how much any single row can influence
@@ -13,7 +13,7 @@
 #    the sensitivity is bounded, then add continuous Laplace or Gaussian noise. The
 #    continuous samplers carry the standard FP caveat (documented in-app).
 #  * Composition is sequential: releasing k queries spends the sum of their epsilon
-#    (and delta). Disjoint histogram bins compose in PARALLEL — one epsilon covers
+#    (and delta). Disjoint histogram bins compose in PARALLEL \u2014 one epsilon covers
 #    the whole histogram.
 
 # ---- secure randomness -----------------------------------------------------
@@ -57,7 +57,7 @@ dp_gaussian_noise <- function(sigma, n = 1L) sigma * dp_normal(n)
 dp_rgeom <- function(ratio, n = 1L) floor(log(dp_secure_units(n)) / log(ratio))
 
 # Discrete Laplace (two-sided geometric): integer noise with P(k) proportional to
-# exp(-epsilon |k| / sensitivity). FP-robust — the released value is an integer.
+# exp(-epsilon |k| / sensitivity). FP-robust \u2014 the released value is an integer.
 dp_discrete_laplace_noise <- function(epsilon, sensitivity = 1, n = 1L) {
   if (epsilon <= 0) stop("epsilon must be > 0.")
   ratio <- exp(-epsilon / sensitivity)

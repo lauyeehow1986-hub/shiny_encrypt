@@ -1,15 +1,15 @@
-# Private Set Intersection (ECDH / DH-PSI) — a single-machine two-party
+# Private Set Intersection (ECDH / DH-PSI) \u2014 a single-machine two-party
 # simulation. Two parties each hold a set of identifiers and want to learn only
 # which ones they share, revealing nothing about the rest.
 #
 # Protocol (both parties honest-but-curious):
 #   A has secret scalar a and set X; B has secret scalar b and set Y.
-#   1. A sends {a*H(x)}            (masked X — looks like random points)
+#   1. A sends {a*H(x)}            (masked X \u2014 looks like random points)
 #   2. B returns {b*a*H(x)} and sends {b*H(y)}
 #   3. A computes {a*b*H(y)} from B's masked Y
 #   Now A holds ab*H(x) for its own set and ab*H(y) for B's; equal points mark
 #   shared elements, because the group is commutative (a*b == b*a). Only masked
-#   points ever cross between the parties — never the raw identifiers.
+#   points ever cross between the parties \u2014 never the raw identifiers.
 #
 # Native primitives live in R/backend.R (native_psi_*); this file packs elements,
 # runs the exchange, and compares the doubly-masked points. It reuses the same
@@ -52,7 +52,7 @@
 psi_two_party <- function(a_elems, b_elems,
                           max_size = getOption("shinyEncrypt.psi.max", 200000L)) {
   if (!isTRUE(crypto_backend_available("psi")))
-    stop("Native PSI backend not built — run tools/build_native.R and restart.")
+    stop("Native PSI backend not built \u2014 run tools/build_native.R and restart.")
   a <- .psi_prep_set(a_elems)
   b <- .psi_prep_set(b_elems)
   if (length(a) == 0L || length(b) == 0L)

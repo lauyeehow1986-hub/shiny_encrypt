@@ -7,7 +7,7 @@
 # the key without the OPRF key, so a weak input is protected against offline
 # brute force as long as the OPRF key stays secret (ideally held by a different
 # custodian or device). Decryption reproduces the same key because the random
-# blind cancels out — the output is deterministic in (input, key). The app plays
+# blind cancels out \u2014 the output is deterministic in (input, key). The app plays
 # both client and server locally; the DLEQ proof makes the evaluation verifiable
 # and the derivation fails closed on a wrong or tampered response.
 

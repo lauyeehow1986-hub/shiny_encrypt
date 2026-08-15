@@ -1,4 +1,4 @@
-# OPAQUE (PAKE) tab — a password login where the server never sees the password
+# OPAQUE (PAKE) tab \u2014 a password login where the server never sees the password
 # and stores no password-equivalent. Shipped as a single-machine two-party
 # simulation with an exportable KE1/KE2/KE3 transcript (see R/opaque.R). On a
 # successful login both parties derive the same session key and the client
@@ -41,7 +41,7 @@ opaque_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$opaque_register, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("opaque")))
-        stop("Native OPAQUE backend not built — run tools/build_native.R and restart.")
+        stop("Native OPAQUE backend not built \u2014 run tools/build_native.R and restart.")
       # Reuse one server identity across registrations so it is the same server.
       if (is.null(rv$opaque_server_kp)) rv$opaque_server_kp <- opaque_server_setup()
       reg <- opaque_register(input$opaque_reg_pw, rv$opaque_server_kp)
@@ -55,7 +55,7 @@ opaque_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$opaque_login, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("opaque")))
-        stop("Native OPAQUE backend not built — run tools/build_native.R and restart.")
+        stop("Native OPAQUE backend not built \u2014 run tools/build_native.R and restart.")
       if (is.null(rv$opaque_record))
         stop("Register a password first, then log in.")
       rv$opaque_login_res <- opaque_login(input$opaque_login_pw,
@@ -74,7 +74,7 @@ opaque_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-info small py-2",
         shiny::HTML(paste0(
           "The server stores an <b>OPRF key</b>, a masking key, and an authenticated ",
-          "<b>envelope</b> — never the password or a hash of it. Logging in runs an ",
+          "<b>envelope</b> \u2014 never the password or a hash of it. Logging in runs an ",
           "oblivious PRF plus a 3-message Diffie-Hellman (3DH) key exchange: only ",
           "<b>KE1/KE2/KE3</b> cross the wire, and both sides end up holding the same ",
           "session key. Honest-but-curious two-party model, simulated on one machine.")))
@@ -89,7 +89,7 @@ opaque_server <- function(input, output, session, rv) {
         shiny::HTML(paste0(
           "<b>Registered.</b> The server stored a ", length(rec),
           "-byte record: a per-user OPRF key, masking key, client public key, and ",
-          "envelope — <b>no password, no password hash</b>."))),
+          "envelope \u2014 <b>no password, no password hash</b>."))),
       shiny::div(class = "small text-muted",
         "Client export key (a password-derived key you could encrypt data with):"),
       shiny::tags$pre(class = "small", .opaque_hex(rv$opaque_reg_export))
@@ -110,7 +110,7 @@ opaque_server <- function(input, output, session, rv) {
     shiny::tagList(
       shiny::div(class = "alert alert-success py-2 small mt-2",
         shiny::HTML(paste0(
-          "<b>Login succeeded — mutual authentication.</b> ",
+          "<b>Login succeeded \u2014 mutual authentication.</b> ",
           if (isTRUE(o$keys_match))
             "Client and server independently derived the <b>same</b> session key. "
           else
@@ -131,12 +131,12 @@ opaque_server <- function(input, output, session, rv) {
     t <- o$transcript
     line <- function(lbl, blob)
       if (is.null(blob)) NULL else
-        sprintf("%-5s (%3d bytes)  %s…", lbl, length(blob),
+        sprintf("%-5s (%3d bytes)  %s\u2026", lbl, length(blob),
                 substr(.opaque_hex(utils::head(blob, 24L)), 1L, 48L))
     shiny::tagList(
       shiny::tags$hr(),
       shiny::div(class = "small text-muted",
-        "Wire transcript — the only bytes that cross between client and server:"),
+        "Wire transcript \u2014 the only bytes that cross between client and server:"),
       shiny::tags$pre(class = "small",
         paste(stats::na.omit(c(
           line("KE1", t$ke1), line("KE2", t$ke2), line("KE3", t$ke3))),
@@ -160,7 +160,7 @@ opaque_server <- function(input, output, session, rv) {
       hexblock <- function(lbl, blob) if (is.null(blob)) NULL else c(
         sprintf("[%s] %d bytes:", lbl, length(blob)), .opaque_hex(blob), "")
       writeLines(c(
-        "# shinyEncrypt OPAQUE — wire transcript (what crosses between client and server)",
+        "# shinyEncrypt OPAQUE \u2014 wire transcript (what crosses between client and server)",
         "# KE1: client blinded password + ephemeral key.",
         "# KE2: server OPRF evaluation + masked credential response + ephemeral key + MAC.",
         "# KE3: client MAC proving knowledge of the password.",

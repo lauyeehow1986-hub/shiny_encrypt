@@ -4,7 +4,7 @@
 # list(name, text). Only the random-key source yields a secret key file (it is
 # the sole copy). Passphrase/free-text sources are reconstructed from the secret
 # the user already holds, and their KDF salt is already stored inside the
-# envelope, so nothing needs downloading — returning no files keeps the
+# envelope, so nothing needs downloading \u2014 returning no files keeps the
 # "Download key material" button (and the temptation to re-upload the salt) away.
 key_material_files <- function(keyres, scheme_id = "aead") {
   files <- list()

@@ -2,19 +2,19 @@
 help_html <- function() {
 '<h4>Step-by-step</h4>
 <ol>
-  <li><b>Import</b> — on the <i>Encrypt</i> tab, upload a CSV/XLSX (converted to an
+  <li><b>Import</b> &mdash; on the <i>Encrypt</i> tab, upload a CSV/XLSX (converted to an
       RDS-equivalent) or an existing RDS/binary. A preview appears.</li>
-  <li><b>Encode</b> — the object is serialized and Base64-encoded automatically.
-      Optionally gzip first (leave off for sensitive/structured data — compression
+  <li><b>Encode</b> &mdash; the object is serialized and Base64-encoded automatically.
+      Optionally gzip first (leave off for sensitive/structured data &mdash; compression
       can leak information).</li>
-  <li><b>Choose a key source</b> —
+  <li><b>Choose a key source</b> &mdash;
       <ul>
-        <li><b>Random key</b> (recommended): a fresh key is generated — you must
+        <li><b>Random key</b> (recommended): a fresh key is generated &mdash; you must
             download it, it is the only copy.</li>
         <li><b>Passphrase</b>: a key is derived with scrypt (memory-hard), or
             <b>Argon2id</b> when the native backend is built (OWASP costs, stored in
             the envelope so the key re-derives on decrypt).</li>
-        <li><b>Free text → hash</b>: text is hashed (BLAKE3/SHA-256/…). A bare hash
+        <li><b>Free text &rarr; hash</b>: text is hashed (BLAKE3/SHA-256/&hellip;). A bare hash
             is <i>not</i> a KDF, so keep <b>Harden through scrypt</b> on; the strength
             badge warns about weak input.</li>
         <li><b>Key file</b>: supply your own key bytes.</li>
@@ -39,11 +39,11 @@ help_html <- function() {
             fail closed. The master can mint any key, so guard it like a CA root.</li>
         <li><b>Recipient identity (IBE)</b> <i>(native)</i>: seals the key straight to an
             <b>identity string</b> (an email, a role, a study id), e.g.
-            <code>alice@hospital.org</code> — no certificate. Generate an authority (a
+            <code>alice@hospital.org</code> &mdash; no certificate. Generate an authority (a
             <code>.pub</code> that encrypts to any identity and a SECRET <code>.master</code> that
             extracts identity keys), then hand each recipient the key issued for their identity.
             Only the key for the sealed identity opens the file; others fail closed. Like CP-ABE the
-            master is an escrow root and there is no revocation — rotate the authority to cut an
+            master is an escrow root and there is no revocation &mdash; rotate the authority to cut an
             identity off.</li>
         <li><b>OPRF-hardened input</b> <i>(native)</i>: derives the key from a low-entropy
             <b>input</b> (a passphrase, id, or secret) strengthened by a <b>separately-held OPRF
@@ -54,18 +54,18 @@ help_html <- function() {
             the exact input <b>and</b> the <code>.oprfkey</code>: a wrong OPRF key is rejected by a
             DLEQ proof, a wrong input fails closed on the AEAD tag.</li>
       </ul></li>
-  <li><b>Pick a scheme &amp; parameters</b> — Core AEAD (XSalsa20-Poly1305 or
+  <li><b>Pick a scheme &amp; parameters</b> &mdash; Core AEAD (XSalsa20-Poly1305 or
       AES-256-GCM) is available now. Leave nonce/IV blank for a fresh random value,
       or set it (hex) for reproducible output. Optionally tick <b>Sign this envelope
       (ML-DSA-65)</b> <i>(native)</i> to attach a post-quantum signature; keep the
       <code>.signsecret</code> private.</li>
-  <li><b>Encrypt</b> — review the envelope summary (scheme, sizes, integrity digest,
-      and — if signed — the signer fingerprint).</li>
-  <li><b>Download</b> — the ciphertext <code>.txt</code>, the reproducible
+  <li><b>Encrypt</b> &mdash; review the envelope summary (scheme, sizes, integrity digest,
+      and &mdash; if signed &mdash; the signer fingerprint).</li>
+  <li><b>Download</b> &mdash; the ciphertext <code>.txt</code>, the reproducible
       <code>.R</code> script, and the key material: the random-key <code>.zip</code>,
       the PQC secret bundle, or the <code>share_k_of_n.txt</code> files. Keep secret
       files private.</li>
-  <li><b>Decrypt (reverse tab)</b> — upload a <code>.txt</code> or <code>.R</code>
+  <li><b>Decrypt (reverse tab)</b> &mdash; upload a <code>.txt</code> or <code>.R</code>
       artifact, supply the matching passphrase / free-text / key file /
       <b>PQC secret</b> / <b>any t Shamir shares</b>, and decrypt. The integrity digest
       is verified, then you can download the original binary (or re-materialize
@@ -75,7 +75,7 @@ help_html <- function() {
 </ol>
 <p class="text-muted small">The exported <code>.R</code> is portable: it decrypts Core
 AEAD artifacts with only <code>sodium</code> + <code>openssl</code> installed, and the
-embedded envelope is parsed as data — nothing in the artifact is executed. Artifacts using
+embedded envelope is parsed as data &mdash; nothing in the artifact is executed. Artifacts using
 a native key source (Argon2id, PQC hybrid, Shamir, time-lock, CP-ABE, IBE) decrypt through the installed
 package instead, since they need the Rust backend. The native features appear only when that
 backend is built and staged.</p>
@@ -85,20 +85,20 @@ GPL-3.0. When it is installed, a <b>Re-encrypt (PRE)</b> tab appears: a delegato
 their own key, then an untrusted proxy re-encrypts the ciphertext for a chosen receiver without
 decrypting it. Only the receiver secret opens the result, and mismatched or tampered fragments
 fail closed.</p>
-<h4>De-identify (FPE) — a separate tab</h4>
+<h4>De-identify (FPE) &mdash; a separate tab</h4>
 <p>Format-preserving encryption tokenises identifier <b>columns</b> of a table while
-keeping their format — it is its own tab, not part of the encrypt/decrypt flow (native
+keeping their format &mdash; it is its own tab, not part of the encrypt/decrypt flow (native
 backend required).</p>
 <ol>
-  <li><b>Apply</b> — upload a CSV/XLSX, tick the columns to de-identify, and choose an
+  <li><b>Apply</b> &mdash; upload a CSV/XLSX, tick the columns to de-identify, and choose an
       alphabet (<b>Auto-detect</b> per column recommended). Each field becomes another of
       the <b>same length and character class</b> (<code>0012345</code> &rarr;
       <code>0847213</code>); delimiters like <code>-</code> pass through in place. It is
       deterministic, so equal values map to equal tokens and joins survive. Values too
       short for the FF1 domain rule are left unchanged.</li>
   <li><b>Download</b> the de-identified CSV <b>and</b> the <code>.fpekit</code> (key +
-      recipe — secret; the only way to reverse).</li>
-  <li><b>Reverse</b> — switch to Reverse mode and upload the CSV + its <code>.fpekit</code>
+      recipe &mdash; secret; the only way to reverse).</li>
+  <li><b>Reverse</b> &mdash; switch to Reverse mode and upload the CSV + its <code>.fpekit</code>
       to restore the originals exactly. Reuse one kit across files for matching tokens.</li>
 </ol>
 <p class="text-muted small">Deterministic FPE is <b>pseudonymisation, not anonymisation</b>:

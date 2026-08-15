@@ -1,7 +1,7 @@
 # Format-preserving encryption (FF1) for column-level de-identification.
 #
 # FF1 (NIST SP 800-38G; FF3-1 was withdrawn in 2025) maps a field to another
-# field of the SAME length over the SAME alphabet, deterministically — the same
+# field of the SAME length over the SAME alphabet, deterministically \u2014 the same
 # key+tweak+value always yields the same token, so joins on a tokenised
 # identifier survive. The native primitive (native_ff1_*) operates on sequences
 # of numerals; this file owns the character<->numeral mapping, the passthrough
@@ -13,7 +13,7 @@
 # it does not defend against frequency analysis.
 
 # Built-in alphabets. radix = nchar(chars); characters outside the chosen
-# alphabet (spaces, '-', '/', …) are passed through unchanged, so the overall
+# alphabet (spaces, '-', '/', \u2026) are passed through unchanged, so the overall
 # format is preserved and the passthrough positions are identical on encrypt and
 # decrypt (FF1 preserves length + character class).
 FPE_ALPHABETS <- list(

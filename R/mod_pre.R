@@ -1,9 +1,9 @@
-# Proxy Re-Encryption (PRE) tab — powered by the OPTIONAL, GPL-licensed companion
+# Proxy Re-Encryption (PRE) tab \u2014 powered by the OPTIONAL, GPL-licensed companion
 # package shinyEncryptPRE. This tab and its server handlers only activate when that
 # package is installed and its native backend loads; the MIT core never depends on it.
 #
 # PRE lets a delegator seal a file to their OWN key, then have an untrusted proxy
-# re-encrypt the ciphertext for a chosen receiver — without decrypting it. Here all
+# re-encrypt the ciphertext for a chosen receiver \u2014 without decrypting it. Here all
 # roles run on one machine; each secret/artifact is downloadable so a real receiver
 # on another machine can recover it with shinyEncryptPRE::pre_decrypt_reencrypted().
 
@@ -14,7 +14,7 @@ pre_companion_available <- function() {
 }
 
 # Short display fingerprint for a key/artifact (not a security control).
-.pre_fp <- function(x) if (is.null(x) || !length(x)) "—" else substr(sodium::bin2hex(x), 1L, 12L)
+.pre_fp <- function(x) if (is.null(x) || !length(x)) "\u2014" else substr(sodium::bin2hex(x), 1L, 12L)
 
 ui_pre <- function() {
   bslib::layout_sidebar(
@@ -23,24 +23,24 @@ ui_pre <- function() {
       shiny::helpText(
         "Grant a receiver access to a file without ever decrypting it. The delegator ",
         "seals to their own key; an untrusted proxy then re-encrypts the ciphertext for ",
-        "the receiver. All roles run here for one machine — download the pieces to run a ",
+        "the receiver. All roles run here for one machine \u2014 download the pieces to run a ",
         "real cross-party flow."),
-      shiny::tags$h6("1 · Keys"),
+      shiny::tags$h6("1 \u00B7 Keys"),
       shiny::actionButton("pre_gen_delegator", "Generate delegator keypair",
                           class = "btn-outline-primary w-100 mb-1"),
       shiny::actionButton("pre_gen_receiver", "Generate receiver keypair",
                           class = "btn-outline-primary w-100 mb-1"),
       shiny::fileInput("pre_receiver_pub_up",
-                       "…or upload a receiver public key (.pub hex)",
+                       "\u2026or upload a receiver public key (.pub hex)",
                        accept = c(".pub", ".txt")),
-      shiny::tags$h6("2 · Encrypt"),
+      shiny::tags$h6("2 \u00B7 Encrypt"),
       shiny::fileInput("pre_infile", "File to protect (any type)"),
       shiny::actionButton("pre_encrypt", "Encrypt to delegator",
                           class = "btn-primary w-100 mb-1"),
-      shiny::tags$h6("3 · Grant + proxy re-encrypt"),
+      shiny::tags$h6("3 \u00B7 Grant + proxy re-encrypt"),
       shiny::actionButton("pre_grant", "Re-encrypt for the receiver",
                           class = "btn-primary w-100 mb-1"),
-      shiny::tags$h6("4 · Receiver"),
+      shiny::tags$h6("4 \u00B7 Receiver"),
       shiny::actionButton("pre_recover", "Recover as receiver",
                           class = "btn-primary w-100"),
       .disclaimer()
@@ -128,7 +128,7 @@ pre_server <- function(input, output, session, rv) {
       ok <- length(pt) == rv$pre_enc$nbytes
       .set_msg(if (ok) "ok" else "error",
                sprintf("Receiver recovered %d bytes%s.", length(pt),
-                       if (ok) " — matches the original length" else " (length differs!)"))
+                       if (ok) " \u2014 matches the original length" else " (length differs!)"))
     }, error = function(e) .set_msg("error", conditionMessage(e)))
   })
 
@@ -150,11 +150,11 @@ pre_server <- function(input, output, session, rv) {
               else if (!is.null(r)) "  (generated here)" else ""),
       sprintf("Encrypted file   : %s", if (!is.null(rv$pre_enc))
         sprintf("%s (%d bytes, capsule %d B)", rv$pre_enc$name, rv$pre_enc$nbytes,
-                length(rv$pre_enc$capsule)) else "—"),
+                length(rv$pre_enc$capsule)) else "\u2014"),
       sprintf("Re-encryption key: %s", .pre_fp(if (!is.null(rv$pre_grant)) rv$pre_grant$rekey else NULL)),
       sprintf("Capsule fragment : %s", .pre_fp(if (!is.null(rv$pre_grant)) rv$pre_grant$cfrag else NULL)),
       sprintf("Recovered        : %s", if (!is.null(rv$pre_recovered))
-        sprintf("%d bytes", length(rv$pre_recovered$bytes)) else "—")
+        sprintf("%d bytes", length(rv$pre_recovered$bytes)) else "\u2014")
     )
     paste(lines, collapse = "\n")
   })

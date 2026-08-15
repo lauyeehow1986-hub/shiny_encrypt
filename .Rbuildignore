@@ -8,3 +8,6 @@
 ^src$
 ^src/rust$
 ^src/rust/target$
+# The native library is an optional, locally-built artifact (tools/build_native.R),
+# not part of the source package; exclude it so the source tarball stays binary-free.
+^inst/libs$

@@ -1,15 +1,15 @@
 # Zero-knowledge range-proof tab. A prover shows that a hidden value lies in a
 # public range [min, max] without revealing it; a verifier checks the proof file
 # and learns only that the statement holds. Self-contained on ristretto255 (see
-# R/zk.R) — no trusted setup. Needs the native backend.
+# R/zk.R) \u2014 no trusted setup. Needs the native backend.
 
 ui_zk <- function() {
   bslib::layout_sidebar(
     sidebar = bslib::sidebar(
       width = 380, title = "Zero-knowledge range proof",
       shiny::helpText(
-        "Prove that a hidden number lies within a range — e.g. “my cohort ",
-        "size is between 100 and 500” — without revealing the number itself."),
+        "Prove that a hidden number lies within a range \u2014 e.g. \u201Cmy cohort ",
+        "size is between 100 and 500\u201D \u2014 without revealing the number itself."),
       shiny::tags$b(class = "small", "1. Choose the hidden value"),
       shiny::radioButtons("zk_source", NULL,
         choices = c("Type a number" = "type",
@@ -22,7 +22,7 @@ ui_zk <- function() {
         shiny::fileInput("zk_infile", "Dataset (CSV/XLSX/RDS)",
                          accept = c(".csv", ".xlsx", ".xls", ".rds", ".txt")),
         shiny::helpText(class = "small text-muted",
-          "The value is computed from your data and never shown — only the ",
+          "The value is computed from your data and never shown \u2014 only the ",
           "in-range proof leaves this machine.")),
       shiny::conditionalPanel("input.zk_source == 'sum'",
         shiny::uiOutput("zk_col_ui")),
@@ -36,7 +36,7 @@ ui_zk <- function() {
       shiny::tags$hr(),
       shiny::tags$b(class = "small", "2. Verify a proof file"),
       shiny::helpText(class = "small text-muted",
-        "The bounds travel inside the proof — the verifier needs only the file."),
+        "The bounds travel inside the proof \u2014 the verifier needs only the file."),
       shiny::fileInput("zk_verify_file", NULL, accept = c(".txt", ".bin", ".proof")),
       shiny::actionButton("zk_verify", "Verify uploaded proof",
                           class = "btn-outline-primary w-100 mb-1"),
@@ -89,7 +89,7 @@ zk_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$zk_prove, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("zk-range")))
-        stop("Native zero-knowledge backend not built — run tools/build_native.R and restart.")
+        stop("Native zero-knowledge backend not built \u2014 run tools/build_native.R and restart.")
       val <- zk_value_of()
       rv$zk_res <- zk_demo(val, as.numeric(input$zk_min), as.numeric(input$zk_max))
       rv$zk_msg <- NULL
@@ -99,7 +99,7 @@ zk_server <- function(input, output, session, rv) {
   shiny::observeEvent(input$zk_verify, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("zk-range")))
-        stop("Native zero-knowledge backend not built — run tools/build_native.R and restart.")
+        stop("Native zero-knowledge backend not built \u2014 run tools/build_native.R and restart.")
       shiny::req(input$zk_verify_file)
       raw <- .zk_read_proof_file(input$zk_verify_file$datapath)
       ok <- tryCatch(zk_range_verify(raw), error = function(e) NA)
@@ -119,9 +119,9 @@ zk_server <- function(input, output, session, rv) {
       shiny::div(class = "alert alert-info small py-2",
         shiny::HTML(paste0(
           "The value is hidden inside a <b>Pedersen commitment</b> ",
-          "C = v·G + r·H. A per-bit <b>OR proof</b> shows it decomposes ",
-          "into bits within the range, and a matching proof on (max − v) pins ",
-          "it from above — together proving <b>min ≤ v ≤ max</b> while ",
+          "C = v\u00B7G + r\u00B7H. A per-bit <b>OR proof</b> shows it decomposes ",
+          "into bits within the range, and a matching proof on (max \u2212 v) pins ",
+          "it from above \u2014 together proving <b>min \u2264 v \u2264 max</b> while ",
           "revealing nothing else. No trusted setup; verifiable by anyone.")))
     )
   })
@@ -133,7 +133,7 @@ zk_server <- function(input, output, session, rv) {
       return(shiny::div(class = "alert alert-danger py-2 small mt-2",
         shiny::HTML(sprintf(paste0(
           "<b>No proof produced.</b> The value is not inside [%s, %s], and a false ",
-          "statement cannot be proved — it failed closed: %s"),
+          "statement cannot be proved \u2014 it failed closed: %s"),
           .zk_fmt(o$min), .zk_fmt(o$max), o$error))))
     }
     shiny::tagList(
@@ -161,7 +161,7 @@ zk_server <- function(input, output, session, rv) {
       sprintf("bit width : %d  (two-sided; %d bit-OR proofs)", o$bits, 2L * o$bits),
       sprintf("proof size: %d bytes", o$size),
       sprintf("verifies  : %s", if (isTRUE(o$verified)) "yes" else "NO"),
-      sprintf("commitment: %s…", substr(.zk_hex(utils::head(o$proof, 25L)[-(1:2)]), 1L, 48L)))
+      sprintf("commitment: %s\u2026", substr(.zk_hex(utils::head(o$proof, 25L)[-(1:2)]), 1L, 48L)))
     shiny::tagList(
       shiny::tags$hr(),
       shiny::div(class = "small text-muted", "Proof transcript:"),
@@ -202,11 +202,11 @@ zk_server <- function(input, output, session, rv) {
       if (!is.null(v)) {
         if (isTRUE(v$ok))
           shiny::div(class = "alert alert-success py-2 small",
-            shiny::HTML(sprintf("<b>Proof valid.</b> “%s” (%d bytes) proves its hidden value is in range.",
+            shiny::HTML(sprintf("<b>Proof valid.</b> \u201C%s\u201D (%d bytes) proves its hidden value is in range.",
                                 v$name, v$bytes)))
         else
           shiny::div(class = "alert alert-danger py-2 small",
-            shiny::HTML(sprintf("<b>Proof rejected.</b> “%s” did not verify — it is invalid or was altered.",
+            shiny::HTML(sprintf("<b>Proof rejected.</b> \u201C%s\u201D did not verify \u2014 it is invalid or was altered.",
                                 v$name)))
       }
     )

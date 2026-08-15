@@ -43,7 +43,7 @@ app_server <- function(input, output, session) {
     # Offer the PQC hybrid key source only when the native backend is loaded.
     ksrc <- c("Random key (download it!)" = "random",
               "Passphrase (KDF)" = "passphrase",
-              "Free text → hash" = "freetext_hash",
+              "Free text \u2192 hash" = "freetext_hash",
               "Key file" = "keyfile")
     if (isTRUE(crypto_backend_available("hpke-hybrid")))
       ksrc <- c(ksrc, "Recipient public key (PQC hybrid)" = "hybrid_pqc")
@@ -65,7 +65,7 @@ app_server <- function(input, output, session) {
   imported <- shiny::reactive({
     shiny::req(input$infile)
     inf <- input$infile
-    shiny::withProgress(message = "Reading & serializing…", value = 0.4, {
+    shiny::withProgress(message = "Reading & serializing\u2026", value = 0.4, {
       tryCatch(
         import_to_raw(inf$datapath, kind = input$kind, orig_name = inf$name),
         error = function(e) {
@@ -79,13 +79,13 @@ app_server <- function(input, output, session) {
   output$import_info <- shiny::renderText({
     shiny::req(input$infile)
     im <- imported()
-    if (is.null(im)) return("Import failed — see the notification. Try a different 'Interpret as' setting.")
+    if (is.null(im)) return("Import failed \u2014 see the notification. Try a different 'Interpret as' setting.")
     dimtxt <- if (!is.null(im$dims))
       sprintf("\nData: %d rows x %d cols%s", im$dims[1], im$dims[2],
               if (isTRUE(im$truncated)) sprintf("  (preview shows first %d x %d)",
                                                 nrow(im$preview), ncol(im$preview)) else "") else ""
     sz <- input$infile$size %||% NA
-    sprintf("Imported '%s' as kind='%s'\nUpload size: %s bytes  ·  serialized payload: %s bytes%s",
+    sprintf("Imported '%s' as kind='%s'\nUpload size: %s bytes  \u00B7  serialized payload: %s bytes%s",
             im$orig_name, im$kind, format(sz, big.mark = ","),
             format(length(im$raw), big.mark = ","), dimtxt)
   })
@@ -98,7 +98,7 @@ app_server <- function(input, output, session) {
     lab <- if (b < 40) "weak" else if (b < 70) "fair" else "strong"
     col <- if (b < 40) "danger" else if (b < 70) "warning" else "success"
     shiny::HTML(sprintf(
-      "<span class='badge bg-%s'>~%s bits (%s)</span> <span class='small text-muted'>A bare hash is not a KDF — keep 'harden' on.</span>",
+      "<span class='badge bg-%s'>~%s bits (%s)</span> <span class='small text-muted'>A bare hash is not a KDF \u2014 keep 'harden' on.</span>",
       col, b, lab))
   })
 
@@ -164,7 +164,7 @@ app_server <- function(input, output, session) {
     rate <- tl_current_rate(input$tl_bits %||% 2048L)
     secs <- as.numeric(input$tl_amount %||% 0) * as.numeric(input$tl_unit %||% 1)
     if (!is.finite(rate) || rate <= 0)
-      return(shiny::div(class = "small text-muted", "Calibrating this machine…"))
+      return(shiny::div(class = "small text-muted", "Calibrating this machine\u2026"))
     Tsq <- timelock_squarings(secs, rate)
     shiny::div(class = "alert alert-info small py-2",
       shiny::HTML(sprintf(
@@ -181,7 +181,7 @@ app_server <- function(input, output, session) {
     tryCatch({
       rv$pqc_keys <- native_hybrid_keygen()
       shiny::showNotification(
-        "PQC keypair generated. Download BOTH files — the secret is the only way to decrypt.",
+        "PQC keypair generated. Download BOTH files \u2014 the secret is the only way to decrypt.",
         type = "warning", duration = 12)
     }, error = function(e)
       shiny::showNotification(paste("Keygen failed:", conditionMessage(e)), type = "error"))
@@ -190,7 +190,7 @@ app_server <- function(input, output, session) {
   output$pqc_key_status <- shiny::renderUI({
     if (is.null(rv$pqc_keys)) return(NULL)
     shiny::div(class = "alert alert-warning small py-2",
-      shiny::HTML("Keypair ready. The <b>.pub</b> encrypts; the <b>.secret</b> decrypts and is the only copy — store it safely."),
+      shiny::HTML("Keypair ready. The <b>.pub</b> encrypts; the <b>.secret</b> decrypts and is the only copy \u2014 store it safely."),
       shiny::div(class = "mt-2",
         shiny::downloadButton("dl_pqc_pub", ".pub", class = "btn-outline-primary btn-sm me-2"),
         shiny::downloadButton("dl_pqc_sec", ".secret", class = "btn-outline-danger btn-sm")))
@@ -250,7 +250,7 @@ app_server <- function(input, output, session) {
       sk <- native_cpabe_keygen(pk, mk, attrs)
       rv$cpabe_issued <- list(sk = sk, attrs = attrs)
       shiny::showNotification(
-        sprintf("Issued an attribute key for: %s. Download it below (SECRET — give it to that recipient).",
+        sprintf("Issued an attribute key for: %s. Download it below (SECRET \u2014 give it to that recipient).",
                 paste(attrs, collapse = ", ")), type = "warning", duration = 12)
     }, error = function(e)
       shiny::showNotification(paste("Issue failed:", conditionMessage(e)), type = "error"))
@@ -319,7 +319,7 @@ app_server <- function(input, output, session) {
       usk <- native_ibe_extract(pk, mk, identity)
       rv$ibe_issued <- list(usk = usk, identity = identity)
       shiny::showNotification(
-        sprintf("Issued an identity key for: %s. Download it below (SECRET — give it to that recipient).",
+        sprintf("Issued an identity key for: %s. Download it below (SECRET \u2014 give it to that recipient).",
                 identity), type = "warning", duration = 12)
     }, error = function(e)
       shiny::showNotification(paste("Issue failed:", conditionMessage(e)), type = "error"))
@@ -348,7 +348,7 @@ app_server <- function(input, output, session) {
     tryCatch({
       rv$oprf_key <- oprf_new_key()
       shiny::showNotification(
-        "OPRF key generated. Download the .oprfkey and keep it secret — decrypting needs BOTH it and your exact input.",
+        "OPRF key generated. Download the .oprfkey and keep it secret \u2014 decrypting needs BOTH it and your exact input.",
         type = "warning", duration = 12)
     }, error = function(e)
       shiny::showNotification(paste("OPRF keygen failed:", conditionMessage(e)), type = "error"))
@@ -357,7 +357,7 @@ app_server <- function(input, output, session) {
   output$oprf_key_status <- shiny::renderUI({
     if (is.null(rv$oprf_key)) return(NULL)
     shiny::div(class = "alert alert-warning small py-2",
-      shiny::HTML("OPRF key ready. It is SECRET and combines with your input to make the key — store the <b>.oprfkey</b> apart from the input."),
+      shiny::HTML("OPRF key ready. It is SECRET and combines with your input to make the key \u2014 store the <b>.oprfkey</b> apart from the input."),
       shiny::div(class = "mt-2",
         shiny::downloadButton("dl_oprf_key", ".oprfkey", class = "btn-outline-danger btn-sm")))
   })
@@ -434,7 +434,7 @@ app_server <- function(input, output, session) {
                                     compressed = isTRUE(input$gzip)))
       if (isTRUE(input$sign_env)) {
         if (is.null(rv$sign_keys))
-          stop("Signing is on but no signing keypair exists — click 'Generate signing keypair' first.")
+          stop("Signing is on but no signing keypair exists \u2014 click 'Generate signing keypair' first.")
         env <- envelope_sign(env, rv$sign_keys$secret, rv$sign_keys$public)
       }
       rv$env <- env; rv$keyres <- kr
@@ -450,7 +450,7 @@ app_server <- function(input, output, session) {
     env <- rv$env; shiny::req(env)
     p <- env$params
     sig <- if (!is.null(env$signature))
-      sprintf("\nSigned     : %s · fp %s", env$signature$alg,
+      sprintf("\nSigned     : %s \u00B7 fp %s", env$signature$alg,
               sign_fingerprint(sodium::hex2bin(env$signature$public_key))) else ""
     sprintf(paste0("Scheme     : %s\nOriginal   : %s (kind=%s%s)\n",
                    "Ciphertext : %d bytes (base64)\nDigest(%s) : %s\n",
@@ -461,7 +461,7 @@ app_server <- function(input, output, session) {
       p$nonce %||% p$iv %||% "(n/a)",
       env$key_source$type,
       if (!is.null(rv$keyres$key_export))
-        "  ⚠ DOWNLOAD THE KEY BELOW — it is the only copy." else "",
+        "  \u26A0 DOWNLOAD THE KEY BELOW \u2014 it is the only copy." else "",
       sig)
   })
 
@@ -506,23 +506,23 @@ app_server <- function(input, output, session) {
     if (is.null(env)) return(shiny::helpText("Upload an artifact to see what it needs."))
     t <- env$key_source$type
     msg <- switch(t,
-      "random"        = "This artifact used a RANDOM key — upload its key file below.",
-      "keyfile"       = "This artifact used a KEY FILE — upload it below.",
-      "passphrase"    = "This artifact used a PASSPHRASE — type it above.",
-      "freetext_hash" = "This artifact used FREE TEXT — type the exact text above.",
-      "hybrid_pqc"    = "This artifact used a PQC HYBRID key — upload the recipient's .secret key below.",
-      "shamir"        = sprintf("This artifact used SHAMIR custody — upload at least %d of the %d share files below.",
+      "random"        = "This artifact used a RANDOM key \u2014 upload its key file below.",
+      "keyfile"       = "This artifact used a KEY FILE \u2014 upload it below.",
+      "passphrase"    = "This artifact used a PASSPHRASE \u2014 type it above.",
+      "freetext_hash" = "This artifact used FREE TEXT \u2014 type the exact text above.",
+      "hybrid_pqc"    = "This artifact used a PQC HYBRID key \u2014 upload the recipient's .secret key below.",
+      "shamir"        = sprintf("This artifact used SHAMIR custody \u2014 upload at least %d of the %d share files below.",
                                 as.integer(env$key_source$t %||% 2L), as.integer(env$key_source$n %||% 3L)),
-      "timelock"      = sprintf("This artifact is TIME-LOCKED (sealed for ~%s) — solve the puzzle below, or supply the creator's master key.",
+      "timelock"      = sprintf("This artifact is TIME-LOCKED (sealed for ~%s) \u2014 solve the puzzle below, or supply the creator's master key.",
                                 .tl_human(env$key_source$target_seconds)),
-      "cpabe"         = sprintf("This artifact is CP-ABE encrypted under the policy %s — upload a matching attribute key below.",
+      "cpabe"         = sprintf("This artifact is CP-ABE encrypted under the policy %s \u2014 upload a matching attribute key below.",
                                 env$key_source$policy %||% "(unknown)"),
-      "ibe"           = sprintf("This artifact is IBE-sealed to the identity %s — upload that identity's key below.",
+      "ibe"           = sprintf("This artifact is IBE-sealed to the identity %s \u2014 upload that identity's key below.",
                                 env$key_source$identity %||% "(unknown)"),
-      "oprf"          = "This artifact used an OPRF-HARDENED input — type the exact input and upload its .oprfkey below.",
+      "oprf"          = "This artifact used an OPRF-HARDENED input \u2014 type the exact input and upload its .oprfkey below.",
       "Provide the matching secret.")
     shiny::div(class = "alert alert-info small py-2",
-               sprintf("Scheme: %s · original: %s · %s", env$scheme, env$orig_name, msg))
+               sprintf("Scheme: %s \u00B7 original: %s \u00B7 %s", env$scheme, env$orig_name, msg))
   })
 
   # Shamir share upload: shown only when the artifact used the shamir source.
@@ -597,7 +597,7 @@ app_server <- function(input, output, session) {
     env <- tryCatch(dec_env(), error = function(e) NULL)
     if (is.null(env) || is.null(env$signature)) return(NULL)
     shiny::tagList(
-      shiny::fileInput("dec_signpub", "Pin expected signer public key (.signpub) — optional"),
+      shiny::fileInput("dec_signpub", "Pin expected signer public key (.signpub) \u2014 optional"),
       shiny::helpText(class = "small text-muted",
         "Upload the sender's .signpub (obtained out-of-band) to confirm the signature is from them specifically, not just from someone."))
   })
@@ -612,12 +612,12 @@ app_server <- function(input, output, session) {
     if (identical(v$status, "unsigned")) return(NULL)   # nothing to show
     danger <- function(html) shiny::div(class = "alert alert-danger small py-2", shiny::HTML(html))
     if (!identical(v$status, "valid"))
-      return(danger("&#9888; Signature <b>INVALID</b> — this artifact was altered or was not signed by the claimed key. Do not trust it."))
-    # cryptographically valid — refine by the pin, if one was supplied
+      return(danger("&#9888; Signature <b>INVALID</b> \u2014 this artifact was altered or was not signed by the claimed key. Do not trust it."))
+    # cryptographically valid \u2014 refine by the pin, if one was supplied
     if (isFALSE(v$expected_match))
       return(danger(sprintf(paste0(
         "&#9888; Signature is cryptographically valid, but the signer key <code>%s</code> does <b>NOT</b> match the .signpub you pinned. ",
-        "This is not from your expected sender — reject it."), v$fingerprint)))
+        "This is not from your expected sender \u2014 reject it."), v$fingerprint)))
     if (isTRUE(v$expected_match))
       return(shiny::div(class = "alert alert-success small py-2",
         shiny::HTML(sprintf(
@@ -625,7 +625,7 @@ app_server <- function(input, output, session) {
           v$alg, v$fingerprint))))
     shiny::div(class = "alert alert-success small py-2",
       shiny::HTML(sprintf(
-        "&#128274; Signature <b>VALID</b> (%s). Signer fingerprint: <code>%s</code> — confirm it matches the sender's known key (or pin their .signpub below).",
+        "&#128274; Signature <b>VALID</b> (%s). Signer fingerprint: <code>%s</code> \u2014 confirm it matches the sender's known key (or pin their .signpub below).",
         v$alg, v$fingerprint)))
   })
 
@@ -635,7 +635,7 @@ app_server <- function(input, output, session) {
       t <- env$key_source$type
       secret <- if (t == "shamir") {
         if (is.null(input$dec_shares) || nrow(input$dec_shares) < 1)
-          stop("This artifact needs its SHAMIR shares — upload the share_*.txt files below.")
+          stop("This artifact needs its SHAMIR shares \u2014 upload the share_*.txt files below.")
         need <- as.integer(env$key_source$t %||% 2L)
         if (nrow(input$dec_shares) < need)
           stop(sprintf("Need at least %d shares to reconstruct the key; you uploaded %d.",
@@ -650,7 +650,7 @@ app_server <- function(input, output, session) {
         } else {
           N   <- base64_to_raw(sm$modulus %||% stop("Artifact is missing its time-lock modulus."))
           Tsq <- as.numeric(sm$t_squarings %||% stop("Artifact is missing its squaring count."))
-          shiny::withProgress(message = "Solving the time-lock puzzle…", value = 0, {
+          shiny::withProgress(message = "Solving the time-lock puzzle\u2026", value = 0, {
             timelock_solve(N, Tsq, on_progress = function(done, total)
               shiny::setProgress(
                 value = done / total,
@@ -661,28 +661,28 @@ app_server <- function(input, output, session) {
         }
       } else if (t == "cpabe") {
         if (is.null(input$dec_cpabe_key))
-          stop("This artifact needs a CP-ABE attribute key — upload it below.")
+          stop("This artifact needs a CP-ABE attribute key \u2014 upload it below.")
         read_secret_bytes(input$dec_cpabe_key$datapath)
       } else if (t == "ibe") {
         if (is.null(input$dec_ibe_key))
-          stop("This artifact needs an IBE identity key — upload it below.")
+          stop("This artifact needs an IBE identity key \u2014 upload it below.")
         read_secret_bytes(input$dec_ibe_key$datapath)
       } else if (t == "oprf") {
         if (!nzchar(input$dec_oprf_input %||% ""))
-          stop("This artifact needs the exact input you hardened — type it below.")
+          stop("This artifact needs the exact input you hardened \u2014 type it below.")
         if (is.null(input$dec_oprf_key))
-          stop("This artifact needs its OPRF key — upload the .oprfkey file below.")
+          stop("This artifact needs its OPRF key \u2014 upload the .oprfkey file below.")
         list(text = input$dec_oprf_input,
              oprf_key = read_secret_bytes(input$dec_oprf_key$datapath))
       } else if (t %in% c("random", "keyfile", "hybrid_pqc")) {
         if (is.null(input$dec_keyfile))
           stop(if (t == "hybrid_pqc")
-                 "This artifact needs the recipient's PQC SECRET key — upload it in the key-file box below."
-               else "This artifact needs its KEY FILE — upload it in the key-file box below.")
+                 "This artifact needs the recipient's PQC SECRET key \u2014 upload it in the key-file box below."
+               else "This artifact needs its KEY FILE \u2014 upload it in the key-file box below.")
         read_secret_bytes(input$dec_keyfile$datapath)
       } else {
         if (!nzchar(input$dec_secret %||% ""))
-          stop(sprintf("This artifact needs its %s — type it in the box above (not a key file; the salt is already inside the artifact).",
+          stop(sprintf("This artifact needs its %s \u2014 type it in the box above (not a key file; the salt is already inside the artifact).",
                        if (t == "passphrase") "PASSPHRASE" else "FREE TEXT"))
         input$dec_secret
       }
@@ -744,7 +744,7 @@ app_server <- function(input, output, session) {
     shiny::div(class = "alert alert-info small py-2",
       shiny::HTML(paste0(
         "FF1 keeps each field's length &amp; character class (e.g. <code>0012345</code> &rarr; <code>0847213</code>). ",
-        "It is <b>deterministic pseudonymisation</b> — the same value always maps to the same token (so joins survive), ",
+        "It is <b>deterministic pseudonymisation</b> \u2014 the same value always maps to the same token (so joins survive), ",
         "which means it hides identifier <i>content</i> but preserves value frequencies and linkage. It is not anonymisation.")))
   })
 
@@ -758,19 +758,19 @@ app_server <- function(input, output, session) {
   shiny::observeEvent(input$fpe_apply, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("fpe-ff1")))
-        stop("Native FF1 backend not built — run tools/build_native.R and restart.")
+        stop("Native FF1 backend not built \u2014 run tools/build_native.R and restart.")
       df <- fpe_in()
       cols <- input$fpe_cols
       if (length(cols) == 0) stop("Select at least one column to de-identify.")
       key <- if (!is.null(input$fpe_kit_reuse))
         sodium::hex2bin(fpe_parse_kit(readLines(input$fpe_kit_reuse$datapath, warn = FALSE))$key)
       else sodium::random(32L)
-      res <- shiny::withProgress(message = "De-identifying…", value = 0.5,
+      res <- shiny::withProgress(message = "De-identifying\u2026", value = 0.5,
         fpe_apply_table(df, cols, key, mode = input$fpe_alpha))
       rv$fpe_out <- list(df = res$df, kit = fpe_build_kit(key, res$recipe),
                          stats = res$stats, name = input$fpe_infile$name)
       shiny::showNotification(
-        "De-identified. Download the CSV and the .fpekit — the .fpekit holds the key and is the only way to reverse it.",
+        "De-identified. Download the CSV and the .fpekit \u2014 the .fpekit holds the key and is the only way to reverse it.",
         type = "warning", duration = 12)
     }, error = function(e)
       shiny::showNotification(paste("FPE failed:", conditionMessage(e)), type = "error", duration = 10))
@@ -779,11 +779,11 @@ app_server <- function(input, output, session) {
   shiny::observeEvent(input$fpe_reverse, {
     tryCatch({
       if (!isTRUE(crypto_backend_available("fpe-ff1")))
-        stop("Native FF1 backend not built — run tools/build_native.R and restart.")
+        stop("Native FF1 backend not built \u2014 run tools/build_native.R and restart.")
       shiny::req(input$fpe_rev_infile, input$fpe_rev_kit)
       df  <- fpe_read_df(input$fpe_rev_infile$datapath, input$fpe_rev_infile$name)
       kit <- fpe_parse_kit(readLines(input$fpe_rev_kit$datapath, warn = FALSE))
-      out <- shiny::withProgress(message = "Restoring…", value = 0.5,
+      out <- shiny::withProgress(message = "Restoring\u2026", value = 0.5,
                                  fpe_reverse_table(df, kit))
       rv$fpe_rev <- list(df = out, name = input$fpe_rev_infile$name,
                          cols = vapply(kit$columns, function(c) c$name, character(1)))
@@ -847,7 +847,7 @@ app_server <- function(input, output, session) {
   # ---------- Schemes catalogue ----------
   output$scheme_table <- shiny::renderTable({
     s <- list_schemes()
-    s$available <- ifelse(s$available, "✓", "—")
+    s$available <- ifelse(s$available, "\u2713", "\u2014")
     names(s) <- c("id", "tier", "scheme", "available", "notes")
     s
   })
@@ -877,12 +877,12 @@ app_server <- function(input, output, session) {
   # Compute-on-ciphertext (FHE / TFHE) tab handlers (native backend).
   fhe_server(input, output, session, rv)
 
-  # Proxy Re-Encryption tab handlers — only when the optional GPL companion is present.
+  # Proxy Re-Encryption tab handlers \u2014 only when the optional GPL companion is present.
   if (pre_companion_available()) pre_server(input, output, session, rv)
 
   # Render outputs eagerly. bslib nav panels render their content hidden during
   # the first pass, so Shiny suspends the initially-active tab's outputs and does
-  # not wake them until a tab change — which leaves the Encrypt tab blank after an
+  # not wake them until a tab change \u2014 which leaves the Encrypt tab blank after an
   # upload. Disabling suspend-when-hidden for the display outputs fixes that.
   for (id in c("import_info", "preview", "strength", "enc_summary", "downloads",
                "pqc_key_status", "cpabe_key_status", "cpabe_issue_status",

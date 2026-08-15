@@ -19,7 +19,7 @@
   if (length(x) != 1L || !is.finite(x))
     stop(sprintf("%s must be a single finite number.", what))
   if (x < 0)
-    stop(sprintf("%s must be >= 0 — this FHE demo works on non-negative integers.", what))
+    stop(sprintf("%s must be >= 0 \u2014 this FHE demo works on non-negative integers.", what))
   if (x != floor(x))
     stop(sprintf("%s must be a whole number.", what))
   if (x > 2^53)
@@ -43,12 +43,12 @@
 }
 
 # Hard cap on how many values we will homomorphically add, independent of the
-# RAM guard — each add is a bootstrapped circuit, so compute time is the limit.
+# RAM guard \u2014 each add is a bootstrapped circuit, so compute time is the limit.
 .fhe_max_values <- function() as.integer(getOption("shinyEncrypt.fhe.max", 128L))
 
 .fhe_require <- function() {
   if (!isTRUE(crypto_backend_available("tfhe")))
-    stop("Native TFHE backend not built — run tools/build_native.R and restart.")
+    stop("Native TFHE backend not built \u2014 run tools/build_native.R and restart.")
 }
 
 # End-to-end demonstration for the tab. Encrypts `values` under a fresh client
@@ -66,13 +66,13 @@ fhe_sum_demo <- function(values) {
   n <- length(vals)
   cap <- .fhe_max_values()
   if (n > cap)
-    stop(sprintf("Too many values (%d). The homomorphic sum is capped at %d — subsample or aggregate first.",
+    stop(sprintf("Too many values (%d). The homomorphic sum is capped at %d \u2014 subsample or aggregate first.",
                  n, cap))
   guard <- resource_guard(n, "tfhe")
   if (!isTRUE(guard$ok)) stop(guard$message)
   pt_sum <- sum(vals)
   if (pt_sum > 2^53)
-    stop("The plaintext sum exceeds 2^53 — reduce the values so the check stays exact.")
+    stop("The plaintext sum exceeds 2^53 \u2014 reduce the values so the check stays exact.")
 
   # 1. Client generates keys. keygen returns [u32_be ck_len][ck][sk...].
   kk <- native_tfhe_keygen()
@@ -89,7 +89,7 @@ fhe_sum_demo <- function(values) {
   # 4. Client decrypts the single result.
   dec <- .fhe_read_u64le(native_tfhe_decrypt(client_key, enc_result))
 
-  # A sample ciphertext (from the encrypt blob body) — looks like random bytes.
+  # A sample ciphertext (from the encrypt blob body) \u2014 looks like random bytes.
   ct_len <- .fhe_u32be(cts[5:8])
   sample_ct <- if (length(cts) >= 8L + min(ct_len, 24L))
     cts[(8L + 1L):(8L + min(ct_len, 24L))] else raw(0)

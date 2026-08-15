@@ -1,7 +1,7 @@
-# FROST — t-of-n threshold Schnorr signatures over ristretto255 (RFC 9591 in
+# FROST \u2014 t-of-n threshold Schnorr signatures over ristretto255 (RFC 9591 in
 # shape), shipped as a single-machine simulation. A group of n custodians shares
 # one signing key so that any t of them can jointly produce ONE ordinary Schnorr
-# signature under a single group public key — and no custodian ever holds the
+# signature under a single group public key \u2014 and no custodian ever holds the
 # whole key. Fewer than t cannot sign.
 #
 # The native layer (R/backend.R) does the crypto; this file plays the trusted
@@ -32,7 +32,7 @@
 
 .frost_require <- function() {
   if (!isTRUE(crypto_backend_available("frost")))
-    stop("Native FROST backend not built — run tools/build_native.R and restart.")
+    stop("Native FROST backend not built \u2014 run tools/build_native.R and restart.")
 }
 
 # Pack the round-1 commitments into the shared signing package the native signer
@@ -76,7 +76,7 @@ frost_sign <- function(message, keys, signer_ids) {
 
   share_for <- function(id) keys$shares[[match(id, known)]]$share
 
-  # Round 1 — every chosen signer commits to two fresh nonces.
+  # Round 1 \u2014 every chosen signer commits to two fresh nonces.
   rounds <- lapply(ids, function(id) {
     cm <- native_frost_commit()                 # nonce(64) || commitment(64)
     list(id = id, nonce = cm[1:64], commitment = cm[65:128])
@@ -84,7 +84,7 @@ frost_sign <- function(message, keys, signer_ids) {
   package <- .frost_pack_package(
     lapply(rounds, function(r) list(id = r$id, commitment = r$commitment)))
 
-  # Round 2 — every signer emits a share bound to the whole commitment set.
+  # Round 2 \u2014 every signer emits a share bound to the whole commitment set.
   zs <- lapply(rounds, function(r)
     native_frost_sign(share_for(r$id), r$id, r$nonce, msg, package, keys$group_pk))
   shares_concat <- do.call(c, zs)
@@ -95,7 +95,7 @@ frost_sign <- function(message, keys, signer_ids) {
     commitments = lapply(rounds, function(r) list(id = r$id, commitment = r$commitment)),
     package = package, shares = zs, signature = NULL, verified = FALSE)
 
-  # Aggregate — sums the shares and verifies; errors if the quorum is too small
+  # Aggregate \u2014 sums the shares and verifies; errors if the quorum is too small
   # or a share is bad (the fail-closed path).
   agg <- tryCatch(native_frost_aggregate(package, msg, keys$group_pk, shares_concat),
                   error = function(e) e)

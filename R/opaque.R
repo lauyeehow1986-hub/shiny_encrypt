@@ -1,4 +1,4 @@
-# OPAQUE — an asymmetric PAKE (OPAQUE-3DH over ristretto255), shipped as a
+# OPAQUE \u2014 an asymmetric PAKE (OPAQUE-3DH over ristretto255), shipped as a
 # single-machine two-party simulation. The whole point of an aPAKE: the server
 # authenticates a client by password WITHOUT ever seeing the password and
 # WITHOUT storing anything a thief could replay. A stolen server record still
@@ -11,7 +11,7 @@
 #                 by the client}. The server learns nothing about the password.
 #   Login (AKE)   KE1 (client) -> KE2 (server) -> KE3 (client) -> verify (server).
 #                 On success both sides derive the SAME session key, and the
-#                 client recovers its stable export key — a password-derived key
+#                 client recovers its stable export key \u2014 a password-derived key
 #                 it can use to encrypt data.
 #
 # On a wrong password the client's envelope check fails closed at KE3; a tampered
@@ -29,7 +29,7 @@
 
 .opaque_require <- function() {
   if (!isTRUE(crypto_backend_available("opaque")))
-    stop("Native OPAQUE backend not built — run tools/build_native.R and restart.")
+    stop("Native OPAQUE backend not built \u2014 run tools/build_native.R and restart.")
 }
 
 # Server long-term identity keypair (server_priv||server_pub, 64 bytes). Created
@@ -73,12 +73,12 @@ opaque_login <- function(password, record, server_kp) {
   pw <- .opaque_pw_raw(password)
   server_priv <- server_kp[1:32]
 
-  # KE1 — client sends a fresh blinded password + ephemeral key.
+  # KE1 \u2014 client sends a fresh blinded password + ephemeral key.
   ci <- native_opaque_client_init(pw)   # client_state(64) || KE1(96)
   client_state <- ci[1:64]
   ke1 <- ci[65:160]
 
-  # KE2 — server evaluates the OPRF, masks the credential response, runs 3DH.
+  # KE2 \u2014 server evaluates the OPRF, masks the credential response, runs 3DH.
   sr <- native_opaque_server_respond(server_priv, record, ke1) # KE2(320) || state(128)
   ke2 <- sr[1:320]
   server_state <- sr[321:448]
@@ -87,7 +87,7 @@ opaque_login <- function(password, record, server_kp) {
     list(success = FALSE, stage = stage, error = conditionMessage(e),
          transcript = list(ke1 = ke1, ke2 = ke2, ke3 = NULL))
 
-  # KE3 — client verifies the envelope (wrong password fails here) and the
+  # KE3 \u2014 client verifies the envelope (wrong password fails here) and the
   # server's MAC (server authentication), then produces its proof.
   cf <- tryCatch(native_opaque_client_finish(pw, client_state, ke1, ke2),
                  error = function(e) e)

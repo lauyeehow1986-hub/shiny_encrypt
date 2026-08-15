@@ -3,7 +3,7 @@
 # Prove that a hidden value lies in a public range [min, max] without revealing
 # it. A Pedersen commitment hides the value; a per-bit Chaum-Pedersen OR proof
 # (made non-interactive with Fiat-Shamir) shows it decomposes into bits inside
-# the range. Self-contained on ristretto255 — no trusted setup. The proof blob
+# the range. Self-contained on ristretto255 \u2014 no trusted setup. The proof blob
 # does NOT contain the value: a verifier learns only that the statement holds.
 #
 # This drives the native primitives (native_zk_range_prove / _verify); the tab
@@ -19,7 +19,7 @@
   if (length(x) != 1L || !is.finite(x))
     stop(sprintf("%s must be a single finite number.", what))
   if (x < 0)
-    stop(sprintf("%s must be >= 0 — this range proof works on non-negative integers.", what))
+    stop(sprintf("%s must be >= 0 \u2014 this range proof works on non-negative integers.", what))
   if (x != floor(x))
     stop(sprintf("%s must be a whole number.", what))
   if (x > 2^53)
@@ -29,7 +29,7 @@
   as.raw(b)
 }
 
-# Number of bits the range (max - min) occupies — the proof's per-side bit width.
+# Number of bits the range (max - min) occupies \u2014 the proof's per-side bit width.
 .zk_bits <- function(min, max) {
   r <- max - min
   if (r <= 0) 1L else as.integer(floor(log2(r)) + 1L)
@@ -37,11 +37,11 @@
 
 .zk_require <- function() {
   if (!isTRUE(crypto_backend_available("zk-range")))
-    stop("Native zero-knowledge backend not built — run tools/build_native.R and restart.")
+    stop("Native zero-knowledge backend not built \u2014 run tools/build_native.R and restart.")
 }
 
 # Produce a range proof that a hidden `value` lies in [min, max]. Returns the raw
-# proof blob. Fails closed (errors) if value is outside the range — you cannot
+# proof blob. Fails closed (errors) if value is outside the range \u2014 you cannot
 # prove a false statement.
 zk_range_prove <- function(value, min, max) {
   .zk_require()
@@ -60,7 +60,7 @@ zk_range_verify <- function(proof) {
 # End-to-end demonstration for the tab: prove the hidden value is in range, then
 # show that (a) the proof verifies, (b) a single flipped byte makes it reject,
 # and (c) a value outside the range cannot be proved at all. `value` is never
-# returned or embedded — only the fact that it lies in [min, max].
+# returned or embedded \u2014 only the fact that it lies in [min, max].
 zk_demo <- function(value, min, max) {
   .zk_require()
   if (!is.finite(suppressWarnings(as.numeric(value))))
@@ -85,7 +85,7 @@ zk_demo <- function(value, min, max) {
          bits = bits, size = length(proof), in_range = TRUE)
   }, error = function(e) {
     # The prover refused: value is outside [min, max] (or another failure). This
-    # is the point — a false statement is unprovable.
+    # is the point \u2014 a false statement is unprovable.
     list(success = FALSE, error = conditionMessage(e), min = min, max = max,
          bits = bits, in_range = FALSE)
   })
